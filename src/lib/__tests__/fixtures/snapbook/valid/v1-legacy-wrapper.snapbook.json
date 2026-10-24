@@ -1,0 +1,74 @@
+{
+  "format": "snapbook.v1",
+  "exportedAt": "2026-01-02T00:00:00.000Z",
+  "app": "Snapbook",
+  "playbook": {
+    "id": "legacy-book",
+    "name": "Legacy Book",
+    "team": "Old Hawks",
+    "level": "5v5",
+    "categories": [
+      {
+        "id": "legacy-tag",
+        "name": "Old tag",
+        "color": "#F4C95D"
+      }
+    ],
+    "formations": [
+      {
+        "id": "legacy-formation",
+        "name": "Legacy Spread",
+        "players": [
+          {
+            "id": "legacy-player",
+            "role": "Center",
+            "label": "C",
+            "number": null,
+            "color": "#F1EEE4",
+            "pos": {
+              "x": 0,
+              "y": 0
+            },
+            "route": null
+          }
+        ]
+      }
+    ],
+    "plays": [
+      {
+        "id": "legacy-play",
+        "name": "Legacy Play",
+        "codeName": "OLD",
+        "formationId": "legacy-formation",
+        "players": [
+          {
+            "id": "legacy-player-copy",
+            "role": "Center",
+            "label": "C",
+            "number": null,
+            "color": "#F1EEE4",
+            "pos": {
+              "x": 0,
+              "y": 0
+            },
+            "route": {
+              "id": "route-0-4",
+              "points": [
+                {
+                  "x": 0,
+                  "y": 4
+                }
+              ]
+            }
+          }
+        ],
+        "categories": [
+          "legacy-tag"
+        ],
+        "notes": "From an older Snapbook build.",
+        "createdAt": "2026-01-01T00:00:00.000Z",
+        "updatedAt": "2026-01-02T00:00:00.000Z"
+      }
+    ]
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "format": "snapbook",
+  "version": 3,
+  "minReaderVersion": 2,
+  "exportedAt": "2026-10-24T00:00:00.000Z",
+  "playbook": {
+    "name": "Minimal Book",
+    "team": "",
+    "level": "5v5",
+    "tags": [],
+    "formations": [
+      {
+        "name": "Solo",
+        "players": [
+          {
+            "label": "C",
+            "role": "Center",
+            "color": "#F1EEE4",
+            "x": 0,
+            "y": 0
+          }
+        ]
+      }
+    ],
+    "plays": []
+  }
+}

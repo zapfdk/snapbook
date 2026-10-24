@@ -14,7 +14,7 @@ Open the URL Vite prints (usually <http://localhost:5173>). Everything is stored
 in the browser with `localStorage`; there is no account or server.
 
 ```bash
-npm test        # archive, route library and route tree tests
+npm test        # format, archive, library, formation and route tree tests
 npm run build   # typecheck and production build
 ```
 
@@ -24,12 +24,16 @@ npm run build   # typecheck and production build
   quick previews, search and filter them, and open any play in the designer.
 - **Team** — set the playbook and squad name, plus each player's name, marker
   label, number and colour once for every formation and play.
-- **Route library** — browse all 18 route presets with full-field previews,
-  group filters and coaching notes for each route.
-- **Designer** — drag five players, apply numbered route presets, draw custom
+- **Route library** — start with 18 coaching presets, then add, edit and
+  delete your own. Each route has a full-field preview, group, colour and
+  coaching note, and its points are editable on the field.
+- **Formation library** — browse every starting alignment, create new ones,
+  rename them, and drag players to realign them. Editing a formation also
+  re-aligns the plays already built from it while leaving their routes intact.
+- **Designer** — drag five players, apply library routes, draw custom
   route points, adjust labels/numbers/colours, tag plays, and save alignments as
   reusable formations. The experimental **Sketch** mode turns a hand-drawn
-  stroke into the closest preset, or a freehand route when nothing fits.
+  stroke into the closest library route, or a freehand route when nothing fits.
 - **Wrist coach** — choose the card order, paper insert size, grid, margins and
   ink options, then export a vector PDF at the exact insert dimensions.
 - **Route tree** — print a landscape or portrait numbered route tree (1–9 plus
@@ -51,13 +55,13 @@ Nothing is sent to a server.
 
 In the Designer, choose **Sketch** (the wand button) and draw a route from a
 player marker with a mouse or finger. When you release, Snapbook compares the
-shape with the 18 built-in routes and applies the closest match. If the line is
-too different, it is kept as a simplified freehand route instead. Recognition
+shape with the routes in this playbook's library and applies the closest match.
+If the line is too different, it is kept as a simplified freehand route instead. Recognition
 is best-effort: clear the route or refine it with the normal route tools
 whenever the snap is not what you meant.
 
-**New playbook** starts a blank playbook with the six starter formations and
-standard tags. It replaces the playbook currently open in the browser, so the
+**New playbook** starts a blank playbook with the six starter formations, the
+standard route library and standard tags. It replaces the playbook currently open in the browser, so the
 dialog offers **Download current backup** before you create it. **Import a
 playbook** (from the Export menu or the new-playbook dialog) also replaces the
 current playbook with the imported file.
@@ -76,24 +80,60 @@ field, in diagrams and in wrist-coach printouts. Roster settings are ordinary
 player data, so they travel in the existing Snapbook backup with no extra file
 format.
 
+## Route and formation libraries
+
+Both libraries belong to the open playbook, so they travel in its backup and a
+new playbook starts from the standard set.
+
+**Route library** (Playbook → Route library) uses a visual editor. Add a new
+route, draw its points on the field, then drag the round handles to reshape it.
+Name, group, colour and coaching note are editable. Applying an edited route to
+a player copies its current points; plays that already use older points keep
+them. Deleting a preset is the same: existing plays are untouched.
+
+**Formations** (Playbook → Formations) can be added from a fresh five-player
+lineup or created from the current play with **Save formation** in the
+Designer. The formation editor renames the formation and moves its players.
+Saving also updates the alignment and labels of every play that starts from
+that formation, while each play keeps its own routes, jersey numbers and marker
+colours. A formation that is still used by plays cannot be deleted; delete
+those plays first, then remove the formation. The last remaining formation is
+also kept so every new play has a lineup to start from.
+
 ## Snapbook file format
 
-The default backup is readable JSON with `"format": "snapbook"`, a schema
-`"version": 2`, and a `"minReaderVersion": 2` compatibility header. It is
+The complete, implementation-independent specification is in
+[docs/snapbook-format.md](docs/snapbook-format.md). It defines every field, the
+player-key algorithm, defaults, version negotiation and the writer's
+normalization rules for applications that want to read or write Snapbook files.
+
+In short, the default backup is readable JSON with `"format": "snapbook"`, a schema
+`"version": 3`, and a `"minReaderVersion": 2` compatibility header. It is
 designed to be opened in any text editor and imported again after hand edits.
 Formations are defined once, plays refer to a formation by name, and each play
-stores only its routes plus any per-play player changes. Coordinates are yards
-relative to the player's alignment: `x` is to the right, `y` is downfield.
+stores only its routes plus any per-play player changes. The route library is a
+readable list with names, groups, colours, notes and route points. Coordinates
+are yards relative to the player's alignment: `x` is to the right, `y` is
+downfield.
 
 ```json
 {
   "format": "snapbook",
-  "version": 2,
+  "version": 3,
   "minReaderVersion": 2,
   "playbook": {
     "name": "Friday night",
     "level": "5v5",
     "tags": [{ "name": "Quick game", "color": "#F4C95D" }],
+    "routes": [
+      {
+        "name": "Hitch",
+        "group": "Quick game",
+        "color": "#F4C95D",
+        "note": "A quick five-yard stem, turn and sit in the window.",
+        "points": [{ "x": 0, "y": 5 }, { "x": 0.4, "y": 3.6 }]
+      }
+    ],
     "formations": [
       {
         "name": "Spread Right",
@@ -116,7 +156,9 @@ relative to the player's alignment: `x` is to the right, `y` is downfield.
 ```
 
 Route points take optional `curve` values; use a `lineup` entry to move a player
-or change their label, number or color for one play.
+or change their label, number or color for one play. The `routes` library is
+optional when reading: older v2 backups without it open with the 18 starter
+routes. An empty array is preserved as an intentionally empty library.
 
 The header is version-negotiated. `version` is the writer's schema revision and
 `minReaderVersion` is the oldest reader that can safely open the file. Readers
@@ -127,7 +169,11 @@ that older readers cannot safely ignore, such as a new field size, must raise
 `minReaderVersion` so those readers refuse the file instead of silently losing
 data. Unknown fields are not preserved when a file is re-exported. Sketch and
 freehand routes use the ordinary route-point list, so they need no extra format
-fields. Older `snapbook.v1` backups still import unchanged.
+fields. Older `snapbook.v1` backups still import unchanged. The format contract
+is exercised by committed valid/golden fixtures in
+[src/lib/__tests__/fixtures/snapbook](src/lib/__tests__/fixtures/snapbook) plus
+contract, compatibility, malformed-input and seeded round-trip suites under
+[src/lib/__tests__](src/lib/__tests__).
 
 ## Playbook Creator (.pbc) compatibility
 
@@ -151,4 +197,3 @@ Reading `.pbc` files back into Snapbook is not implemented. Use the
 
 React 19, TypeScript, Vite, Tailwind CSS 4, Zustand, jsPDF and lucide-react.
 No backend is required.
-# snapbook

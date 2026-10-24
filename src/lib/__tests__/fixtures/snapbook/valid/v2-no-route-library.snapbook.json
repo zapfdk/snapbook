@@ -1,0 +1,219 @@
+{
+  "format": "snapbook",
+  "version": 2,
+  "exportedAt": "2026-10-24T00:00:00.000Z",
+  "playbook": {
+    "name": "Friday Night",
+    "team": "Hawks",
+    "level": "5v5",
+    "tags": [
+      {
+        "name": "Quick game",
+        "color": "#F4C95D"
+      },
+      {
+        "name": "Deep shots",
+        "color": "#FF7A59"
+      }
+    ],
+    "formations": [
+      {
+        "name": "Spread Right",
+        "players": [
+          {
+            "label": "C",
+            "role": "Center",
+            "color": "#F1EEE4",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "label": "QB",
+            "role": "Quarterback",
+            "number": 7,
+            "color": "#F4C95D",
+            "x": 0,
+            "y": -4.5
+          },
+          {
+            "label": "WR-L",
+            "role": "Wide Receiver Left",
+            "number": 11,
+            "color": "#FF8265",
+            "x": -11.12,
+            "y": 0
+          },
+          {
+            "label": "WR-R",
+            "role": "Wide Receiver Right",
+            "number": 88,
+            "color": "#64D8C4",
+            "x": 11,
+            "y": 0
+          },
+          {
+            "label": "HB",
+            "role": "Halfback",
+            "color": "#B09CFF",
+            "x": 4,
+            "y": -2
+          }
+        ]
+      },
+      {
+        "name": "Trips Right",
+        "players": [
+          {
+            "label": "C",
+            "role": "Center",
+            "color": "#F1EEE4",
+            "x": 0,
+            "y": 0
+          },
+          {
+            "label": "QB",
+            "role": "Quarterback",
+            "number": 7,
+            "color": "#F4C95D",
+            "x": 0,
+            "y": -4.5
+          },
+          {
+            "label": "WR-L",
+            "role": "Wide Receiver Left",
+            "number": 11,
+            "color": "#FF8265",
+            "x": -11,
+            "y": 0
+          },
+          {
+            "label": "WR-R",
+            "role": "Wide Receiver Right",
+            "number": 88,
+            "color": "#64D8C4",
+            "x": 11,
+            "y": 0
+          },
+          {
+            "label": "SLOT",
+            "role": "Slot Receiver",
+            "color": "#82B7FF",
+            "x": 6,
+            "y": -1
+          }
+        ]
+      }
+    ],
+    "plays": [
+      {
+        "name": "Mesh Right",
+        "code": "MESH",
+        "formation": "Spread Right",
+        "tags": [
+          "Quick game"
+        ],
+        "notes": "Clear the middle with the corner, mesh underneath.",
+        "updatedAt": "2026-10-23T12:00:00.000Z",
+        "routes": {
+          "C": [
+            {
+              "x": 0,
+              "y": 3
+            }
+          ],
+          "WR-L": [
+            {
+              "x": 0,
+              "y": 3
+            },
+            {
+              "x": 12,
+              "y": 4.2,
+              "curve": 1
+            }
+          ],
+          "WR-R": [
+            {
+              "x": 0,
+              "y": 2
+            },
+            {
+              "x": 8,
+              "y": 3,
+              "curve": 0.6
+            }
+          ],
+          "HB": [
+            {
+              "x": 0,
+              "y": 4
+            }
+          ]
+        },
+        "lineup": {
+          "WR-L": {
+            "label": "X",
+            "role": "X Receiver",
+            "number": 88,
+            "color": "#F08EC0",
+            "x": -10.25,
+            "y": 0.75
+          },
+          "WR-R": {
+            "number": null
+          },
+          "HB": {
+            "label": "H"
+          }
+        }
+      },
+      {
+        "name": "Four Verticals",
+        "formation": "Spread Right",
+        "updatedAt": "2026-10-22T09:30:00.000Z"
+      },
+      {
+        "name": "Trips Flood",
+        "code": "FLOOD",
+        "formation": "Trips Right",
+        "tags": [
+          "Deep shots",
+          "Quick game"
+        ],
+        "updatedAt": "2026-10-21T18:15:00.000Z",
+        "routes": {
+          "C": [
+            {
+              "x": 0,
+              "y": 2
+            }
+          ],
+          "WR-R": [
+            {
+              "x": 0,
+              "y": 9
+            }
+          ],
+          "SLOT": [
+            {
+              "x": -2,
+              "y": 2,
+              "curve": -1.2
+            },
+            {
+              "x": -2,
+              "y": 12
+            }
+          ]
+        },
+        "lineup": {
+          "QB": {
+            "number": null,
+            "x": 0.5,
+            "y": -4
+          }
+        }
+      }
+    ]
+  }
+}
