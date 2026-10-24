@@ -62,12 +62,12 @@ export function ShareDialog({ open, playbook, onClose, onNotify }: ShareDialogPr
       open={open}
       onClose={onClose}
       title="Share this playbook"
-      description="Anyone with the link can read every play, route and formation."
+      description="Anyone with the link can read every play, route and formation — and merge it into their own playbook or use it as a fresh copy."
       footer={
         <div className="flex flex-wrap items-center justify-between gap-3">
           <span className="flex items-center gap-1.5 text-[0.68rem] text-slate-moss">
             <Lock size={12} className="text-lime" />
-            Read-only · does not change the recipient’s playbook
+            Read-only view · recipients can merge or edit a copy
           </span>
           <div className="flex gap-2">
             <button className="btn btn-secondary" onClick={onClose}>

@@ -125,7 +125,7 @@ export function AppHeader({
             className="btn btn-secondary !px-2 min-[380px]:!px-4"
             onClick={onShare}
             aria-label="Share playbook"
-            title="Share a read-only link"
+            title="Share a read-only link with merge and edit options"
           >
             <Share2 size={15} />
             <span className="hidden sm:inline">Share</span>

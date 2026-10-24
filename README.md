@@ -41,7 +41,8 @@ npm run build   # typecheck and production build
   and monochrome mode are optional; monochrome uses solid, dashed and dotted
   line depths instead of colour.
 - **Share** — generate a read-only link that carries the whole playbook in the
-  URL, with no upload and no account.
+  URL, with no upload and no account. Recipients can merge it into their own
+  playbook or use it as an editable copy.
 - **Backup** — export a readable `.snapbook.json` file, import one back
   (including older backups), or export a password-protected `.pbc` file for
   Playbook Creator.
@@ -58,9 +59,12 @@ Nothing is sent to a server.
 **Share** in the header builds a link with the complete playbook base64 encoded
 in the URL fragment. Opening it shows a read-only copy of the plays, route
 library, formations, tags and team roster. Nothing is uploaded. The shared view
-never reads from or writes to the playbook saved in the recipient’s browser, and
-**Open my playbook** returns to their own copy. Long playbooks create long
-links, so send the complete link in one piece.
+never writes to the playbook saved in the recipient’s browser until they choose
+**Edit a copy**. They can merge the shared plays, formations, routes and tags
+into their current playbook — skipping exact duplicate plays — or replace it
+after a confirmation that offers a backup download. **Open my playbook** returns to their own copy without changing
+anything. Long playbooks create long links, so send the complete link in one
+piece.
 
 ## Experimental sketch
 

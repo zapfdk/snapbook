@@ -16,6 +16,7 @@ import { TeamView } from './views/TeamView'
 import { SharedPlaybookView } from './views/SharedPlaybookView'
 import { usePlaybook } from './store/playbook'
 import { exportNative, importNative } from './lib/files'
+import { mergeSharedPlaybook } from './lib/mergePlaybook'
 import { SHARE_HASH_PREFIX, sharePlaybookFromHash } from './lib/share'
 import type { Playbook } from './types'
 
@@ -43,8 +44,9 @@ function readSharedLink(): SharedLink | null {
 }
 
 /**
- * Share links render their own read-only copy of the playbook and never touch
- * the playbook persisted in this browser.
+ * Share links render their own read-only copy of the playbook. The visitor has
+ * to explicitly choose “Edit a copy” before anything is written to the
+ * playbook persisted in this browser.
  */
 export default function App() {
   const [sharedLink, setSharedLink] = useState<SharedLink | null>(readSharedLink)
@@ -65,9 +67,32 @@ export default function App() {
     window.scrollTo({ top: 0 })
   }
 
+  const editSharedCopy = () => {
+    if (!sharedLink?.playbook) return
+    usePlaybook.getState().importPlaybook(sharedLink.playbook)
+    exitSharedLink()
+  }
+
+  const mergeSharedCopy = () => {
+    if (!sharedLink?.playbook) return
+    const state = usePlaybook.getState()
+    const merged = mergeSharedPlaybook(state.playbook, sharedLink.playbook)
+    // Merging is additive, so keep the wrist-coach selection the user curated.
+    const wristPlays = state.wrist.selectedPlayIds
+    state.importPlaybook(merged.playbook)
+    usePlaybook.getState().setWristPlays(wristPlays)
+    exitSharedLink()
+  }
+
   if (sharedLink) {
     return sharedLink.playbook ? (
-      <SharedPlaybookView playbook={sharedLink.playbook} onExit={exitSharedLink} />
+      <SharedPlaybookView
+        playbook={sharedLink.playbook}
+        localPlaybook={usePlaybook.getState().playbook}
+        onEdit={editSharedCopy}
+        onMerge={mergeSharedCopy}
+        onExit={exitSharedLink}
+      />
     ) : (
       <InvalidSharedLink
         message={sharedLink.error ?? 'This share link could not be opened.'}

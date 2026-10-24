@@ -1,27 +1,55 @@
+import { useState } from 'react'
 import {
+  AlertTriangle,
   ArrowLeft,
   CalendarDays,
+  Download,
   GitFork,
+  GitMerge,
   Layers,
   LayoutGrid,
   Link2,
   Lock,
+  PencilLine,
+  Replace,
   Users,
 } from 'lucide-react'
 import { Logo } from '../components/Logo'
+import { Modal } from '../components/Modal'
 import { PlayDiagram } from '../components/PlayDiagram'
 import { RoutePreview } from '../components/RoutePreview'
 import { formatRouteBreak, routeDepth } from '../data/routeLibrary'
-import { formatDate } from '../lib/files'
+import { cx, exportNative, formatDate } from '../lib/files'
 import { getRosterGroups } from '../lib/roster'
 import type { Playbook } from '../types'
 
 interface SharedPlaybookViewProps {
   playbook: Playbook
+  /** The playbook currently saved in this browser, if the visitor has one. */
+  localPlaybook: Playbook
+  onEdit: () => void
+  onMerge: () => void
   onExit: () => void
 }
 
-export function SharedPlaybookView({ playbook, onExit }: SharedPlaybookViewProps) {
+export function SharedPlaybookView({
+  playbook,
+  localPlaybook,
+  onEdit,
+  onMerge,
+  onExit,
+}: SharedPlaybookViewProps) {
+  const [editOpen, setEditOpen] = useState(false)
+  const [mode, setMode] = useState<'merge' | 'replace'>('merge')
+  const [backupDownloaded, setBackupDownloaded] = useState(false)
+  const replacesLocal = localPlaybook.plays.length > 0
+
+  const closeEditDialog = () => {
+    setEditOpen(false)
+    setMode('merge')
+    setBackupDownloaded(false)
+  }
+
   const formations = new Map(
     playbook.formations.map((formation) => [formation.id, formation.name]),
   )
@@ -38,10 +66,20 @@ export function SharedPlaybookView({ playbook, onExit }: SharedPlaybookViewProps
               Read-only share
             </span>
           </span>
-          <button className="btn btn-secondary ml-auto" onClick={onExit}>
-            <ArrowLeft size={15} />
-            Open my playbook
-          </button>
+          <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
+            <button
+              className="btn btn-ghost !px-2 sm:!px-3"
+              onClick={onExit}
+              aria-label="Open my playbook"
+            >
+              <ArrowLeft size={15} />
+              <span className="hidden sm:inline">Open my playbook</span>
+            </button>
+            <button className="btn btn-primary !px-2.5 sm:!px-4" onClick={() => setEditOpen(true)}>
+              <PencilLine size={15} />
+              Edit a copy
+            </button>
+          </div>
         </div>
       </header>
 
@@ -63,8 +101,8 @@ export function SharedPlaybookView({ playbook, onExit }: SharedPlaybookViewProps
               </h1>
               <p className="mt-3 max-w-xl text-sm leading-relaxed text-fog">
                 {playbook.team ? `${playbook.team} · ` : ''}
-                You’re viewing a shared copy. Everything is read-only and nothing
-                here changes the playbook saved in your browser.
+                You’re viewing a shared copy. Browse everything below, then merge it
+                into your playbook or edit a copy of your own.
               </p>
               {playbook.categories.length > 0 && (
                 <div className="mt-5 flex flex-wrap gap-1.5">
@@ -317,12 +355,20 @@ export function SharedPlaybookView({ playbook, onExit }: SharedPlaybookViewProps
 
             <aside className="rounded-2xl border border-line bg-ink-850 p-5">
               <div className="flex items-center gap-2">
-                <Lock size={14} className="text-lime" />
+                <PencilLine size={14} className="text-lime" />
                 <h3 className="font-display text-lg font-bold tracking-tight text-chalk">
-                  Shared as read-only
+                  Build on this playbook
                 </h3>
               </div>
-              <dl className="mt-4 grid gap-3">
+              <p className="mt-2 text-[0.7rem] leading-relaxed text-fog">
+                Merge it into your playbook or start fresh from this copy, then keep
+                editing in your browser.
+              </p>
+              <button className="btn btn-primary mt-4 w-full" onClick={() => setEditOpen(true)}>
+                <PencilLine size={14} />
+                Edit a copy
+              </button>
+              <dl className="mt-4 grid gap-3 border-t border-line/70 pt-4">
                 <IdentityRow label="Playbook" value={playbook.name} />
                 <IdentityRow label="Team / squad" value={playbook.team || '—'} />
                 <IdentityRow label="Field size" value={`${playbook.level} flag`} />
@@ -330,7 +376,7 @@ export function SharedPlaybookView({ playbook, onExit }: SharedPlaybookViewProps
               </dl>
               <p className="mt-4 flex items-start gap-1.5 text-[0.68rem] leading-relaxed text-slate-moss">
                 <Link2 size={12} className="mt-0.5 shrink-0 text-lime" />
-                The playbook travels inside this link. Opening it never replaces the
+                The playbook travels inside this link. Browsing it never replaces the
                 playbook saved in your browser.
               </p>
             </aside>
@@ -341,6 +387,132 @@ export function SharedPlaybookView({ playbook, onExit }: SharedPlaybookViewProps
           Shared from Snapbook · read-only view
         </footer>
       </main>
+
+      <Modal
+        open={editOpen}
+        onClose={closeEditDialog}
+        title="Edit this shared playbook"
+        description="Merge it into your playbook, or start fresh from the shared copy."
+        footer={
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <span className="text-[0.66rem] text-slate-moss">
+              Nothing changes until you confirm.
+            </span>
+            <div className="flex gap-2">
+              <button className="btn btn-secondary" onClick={closeEditDialog}>
+                Cancel
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={() => {
+                  closeEditDialog()
+                  if (mode === 'merge') onMerge()
+                  else onEdit()
+                }}
+              >
+                {mode === 'merge' ? <GitMerge size={14} /> : <PencilLine size={14} />}
+                {mode === 'merge'
+                  ? 'Merge into my playbook'
+                  : replacesLocal
+                    ? 'Replace and edit'
+                    : 'Use and edit'}
+              </button>
+            </div>
+          </div>
+        }
+      >
+        <div className="rounded-xl border border-lime/25 bg-lime/[0.06] p-4">
+          <div className="mono-label text-lime/80">Shared playbook</div>
+          <p className="mt-1 font-display text-lg font-bold tracking-tight text-chalk">
+            {playbook.name}
+          </p>
+          <p className="mt-1 text-[0.72rem] text-fog">
+            {playbook.plays.length} play{playbook.plays.length === 1 ? '' : 's'} ·{' '}
+            {playbook.formations.length} formation
+            {playbook.formations.length === 1 ? '' : 's'} · {playbook.routes.length} route
+            {playbook.routes.length === 1 ? '' : 's'}
+          </p>
+        </div>
+
+        <div className="mt-3 grid gap-2.5 sm:grid-cols-2">
+          <button
+            type="button"
+            aria-pressed={mode === 'merge'}
+            onClick={() => setMode('merge')}
+            className={cx(
+              'rounded-xl border p-4 text-left transition-colors',
+              mode === 'merge'
+                ? 'border-lime/45 bg-lime/[0.08]'
+                : 'border-line bg-ink-900 hover:bg-ink-800',
+            )}
+          >
+            <span className="flex items-center gap-2 text-[0.78rem] font-semibold text-chalk">
+              <GitMerge size={15} className="text-lime" />
+              Merge into mine
+            </span>
+            <span className="mt-1.5 block text-[0.7rem] leading-relaxed text-fog">
+              Adds the shared plays, formations, routes and tags to
+              “{localPlaybook.name}”, skipping exact duplicates. Your existing
+              plays stay.
+            </span>
+          </button>
+
+          <button
+            type="button"
+            aria-pressed={mode === 'replace'}
+            onClick={() => setMode('replace')}
+            className={cx(
+              'rounded-xl border p-4 text-left transition-colors',
+              mode === 'replace'
+                ? 'border-coral/45 bg-coral/[0.07]'
+                : 'border-line bg-ink-900 hover:bg-ink-800',
+            )}
+          >
+            <span className="flex items-center gap-2 text-[0.78rem] font-semibold text-chalk">
+              <Replace size={15} className="text-coral" />
+              {replacesLocal ? 'Replace mine' : 'Use as my playbook'}
+            </span>
+            <span className="mt-1.5 block text-[0.7rem] leading-relaxed text-fog">
+              Starts fresh from the shared copy
+              {replacesLocal
+                ? ` and replaces “${localPlaybook.name}” in this browser.`
+                : '.'}
+            </span>
+          </button>
+        </div>
+
+        {mode === 'replace' && replacesLocal && (
+          <div className="mt-3 rounded-xl border border-coral/25 bg-coral/[0.07] p-4">
+            <div className="flex items-center gap-2 text-[0.72rem] font-semibold text-coral">
+              <AlertTriangle size={14} />
+              This replaces your current playbook
+            </div>
+            <p className="mt-1.5 text-[0.72rem] leading-relaxed text-fog">
+              “{localPlaybook.name}” and its {localPlaybook.plays.length} play
+              {localPlaybook.plays.length === 1 ? '' : 's'} are only saved in this browser.
+              Download a backup first if you want to keep them.
+            </p>
+            <button
+              className="btn btn-secondary mt-3"
+              onClick={() => {
+                exportNative(localPlaybook)
+                setBackupDownloaded(true)
+              }}
+            >
+              <Download size={14} />
+              {backupDownloaded ? 'Backup downloaded' : 'Download a backup first'}
+            </button>
+          </div>
+        )}
+
+        {mode === 'merge' && replacesLocal && (
+          <p className="mt-3 rounded-xl border border-lime/20 bg-lime/[0.05] px-4 py-3 text-[0.7rem] leading-relaxed text-fog">
+            Merging keeps every play in “{localPlaybook.name}”. Exact duplicate
+            plays are skipped; formations, routes and tags are only added when they
+            are new or different.
+          </p>
+        )}
+      </Modal>
     </div>
   )
 }
