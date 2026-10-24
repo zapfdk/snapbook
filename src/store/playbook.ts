@@ -3,8 +3,9 @@ import { persist } from 'zustand/middleware'
 import { DEFAULT_PLAYBOOK, createBlankPlaybook } from '../data/defaults'
 import { cloneRouteLibrary } from '../data/routeLibrary'
 import { applyRosterGroupPatch, type RosterGroupPatch } from '../lib/roster'
-import { applyFormationUpdate } from '../lib/formations'
+import { applyFormationUpdate, cloneFormation } from '../lib/formations'
 import { DEFAULT_ROUTE_TREE_SETTINGS } from '../lib/routeTree'
+import { flipRoutePoints } from '../lib/geometry'
 import {
   type Category,
   type Formation,
@@ -86,11 +87,13 @@ interface PlaybookState {
   movePlayer: (playId: string, playerId: string, pos: Point) => void
   applyRoutePreset: (playId: string, playerId: string, presetId: string) => void
   setPlayerRoute: (playId: string, playerId: string, points: RoutePoint[]) => void
+  flipPlayerRoute: (playId: string, playerId: string) => void
   clearPlayerRoute: (playId: string, playerId: string) => void
   addRoute: (route: LibraryRoute) => void
   updateRoute: (routeId: string, patch: Partial<Omit<LibraryRoute, 'id'>>) => void
   deleteRoute: (routeId: string) => void
   addFormation: (formation: Formation) => void
+  duplicateFormation: (formationId: string) => Formation | null
   updateFormation: (formationId: string, patch: { name?: string; players?: Player[] }) => void
   createFormationFromPlay: (playId: string, name: string) => void
   deleteFormation: (formationId: string) => boolean
@@ -265,6 +268,25 @@ export const usePlaybook = create<PlaybookState>()(
           })),
         })),
 
+      flipPlayerRoute: (playId, playerId) =>
+        set((state) => ({
+          playbook: updatePlayIn(state.playbook, playId, (play) => ({
+            ...play,
+            players: play.players.map((player) =>
+              player.id === playerId && player.route
+                ? {
+                    ...player,
+                    route: {
+                      ...player.route,
+                      points: flipRoutePoints(player.route.points),
+                    },
+                  }
+                : player,
+            ),
+            updatedAt: now(),
+          })),
+        })),
+
       clearPlayerRoute: (playId, playerId) =>
         set((state) => ({
           playbook: updatePlayIn(state.playbook, playId, (play) => ({
@@ -319,6 +341,25 @@ export const usePlaybook = create<PlaybookState>()(
             ],
           },
         })),
+
+      duplicateFormation: (formationId) => {
+        const state = get()
+        const source = state.playbook.formations.find(
+          (formation) => formation.id === formationId,
+        )
+        if (!source) return null
+        const copy = cloneFormation(
+          source,
+          state.playbook.formations.map((formation) => formation.name),
+        )
+        const index = state.playbook.formations.findIndex(
+          (formation) => formation.id === formationId,
+        )
+        const formations = [...state.playbook.formations]
+        formations.splice(index + 1, 0, copy)
+        set({ playbook: { ...state.playbook, formations } })
+        return copy
+      },
 
       updateFormation: (formationId, patch) =>
         set((state) => ({

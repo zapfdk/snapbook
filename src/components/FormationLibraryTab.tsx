@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Pencil, Plus, Search, Trash2, X } from 'lucide-react'
+import { Copy, Pencil, Plus, Search, Trash2, X } from 'lucide-react'
 import { Modal } from './Modal'
 import { PlayDiagram } from './PlayDiagram'
 import { FormationLibraryEditor } from './FormationLibraryEditor'
@@ -16,6 +16,7 @@ interface EditorState {
 export function FormationLibraryTab() {
   const playbook = usePlaybook((state) => state.playbook)
   const addFormation = usePlaybook((state) => state.addFormation)
+  const duplicateFormation = usePlaybook((state) => state.duplicateFormation)
   const updateFormation = usePlaybook((state) => state.updateFormation)
   const deleteFormation = usePlaybook((state) => state.deleteFormation)
 
@@ -75,7 +76,7 @@ export function FormationLibraryTab() {
         <p className="max-w-2xl text-[0.72rem] leading-relaxed text-slate-moss">
           Formations are the starting alignments for new plays. Editing one here
           also re-aligns the plays already built from it without touching their
-          routes.
+          routes. Duplicate one to try a variant without changing the original.
         </p>
         <div className="flex w-full items-center gap-2 sm:w-auto">
           <div className="relative min-w-0 flex-1 sm:w-64 sm:flex-none">
@@ -158,6 +159,18 @@ export function FormationLibraryTab() {
                     </span>
                   </div>
                   <div className="absolute right-2 top-2 flex gap-1">
+                    <button
+                      className="icon-btn border border-white/10 bg-ink-950/75 text-chalk backdrop-blur hover:bg-ink-800"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        const copy = duplicateFormation(formation.id)
+                        if (copy) setEditor({ formation: copy, isNew: false })
+                      }}
+                      aria-label={`Duplicate ${formation.name}`}
+                      title="Duplicate formation"
+                    >
+                      <Copy size={13} />
+                    </button>
                     <button
                       className="icon-btn border border-white/10 bg-ink-950/75 text-chalk backdrop-blur hover:bg-ink-800"
                       onClick={(event) => {

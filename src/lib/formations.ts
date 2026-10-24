@@ -20,6 +20,15 @@ export function uniqueFormationName(base: string, names: string[]): string {
   return `${cleaned} ${suffix}`
 }
 
+/** Creates an editable copy of a formation with fresh player ids. */
+export function cloneFormation(formation: Formation, existingNames: string[]): Formation {
+  return {
+    id: createId(),
+    name: uniqueFormationName(`${formation.name} copy`, existingNames),
+    players: cloneFormationPlayers(formation.players),
+  }
+}
+
 /**
  * Renames or realigns a formation and pushes the new alignments into every
  * play built from it. Routes, jersey numbers and marker colors belong to the

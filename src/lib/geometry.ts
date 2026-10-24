@@ -111,6 +111,17 @@ export function routeShape(player: Player, route: Route): RouteShape | null {
   }
 }
 
+/**
+ * Mirrors a route across the player's alignment. Curve bows are flipped too so
+ * the bend keeps its shape on the opposite side.
+ */
+export const flipRoutePoints = (points: RoutePoint[]): RoutePoint[] =>
+  points.map((point) => ({
+    x: point.x === 0 ? 0 : -point.x,
+    y: point.y,
+    ...(point.curve ? { curve: -point.curve } : {}),
+  }))
+
 export const routeLength = (route: Route) =>
   route.points.reduce((total, point, index) => {
     const previous = index === 0 ? { x: 0, y: 0 } : route.points[index - 1]

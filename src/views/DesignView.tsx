@@ -5,6 +5,7 @@ import {
   Copy,
   CornerDownLeft,
   Eraser,
+  FlipHorizontal2,
   Layers,
   MousePointer2,
   PenLine,
@@ -48,6 +49,7 @@ export function DesignView({ play, onBack }: DesignViewProps) {
   const updatePlayer = usePlaybook((state) => state.updatePlayer)
   const movePlayer = usePlaybook((state) => state.movePlayer)
   const setPlayerRoute = usePlaybook((state) => state.setPlayerRoute)
+  const flipPlayerRoute = usePlaybook((state) => state.flipPlayerRoute)
   const clearPlayerRoute = usePlaybook((state) => state.clearPlayerRoute)
   const applyRoutePreset = usePlaybook((state) => state.applyRoutePreset)
   const duplicatePlay = usePlaybook((state) => state.duplicatePlay)
@@ -665,6 +667,16 @@ export function DesignView({ play, onBack }: DesignViewProps) {
                 <PenLine size={14} />
                 {selectedPlayer.route ? 'Edit route points' : 'Draw route'}
               </button>
+              {selectedPlayer.route && (
+                <button
+                  className="btn btn-secondary w-full justify-start"
+                  onClick={() => flipPlayerRoute(play.id, selectedPlayer.id)}
+                  title="Mirror this route across the player's alignment"
+                >
+                  <FlipHorizontal2 size={14} />
+                  Flip route
+                </button>
+              )}
               {selectedPlayer.route && (
                 <button
                   className="btn btn-ghost w-full justify-start !text-coral/90 hover:!bg-coral/10"

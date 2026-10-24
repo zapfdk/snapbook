@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { Formation, Play, Playbook, Player } from '../../types'
 import {
   applyFormationUpdate,
+  cloneFormation,
   cloneFormationPlayers,
   formationUsage,
   uniqueFormationName,
@@ -87,6 +88,20 @@ describe('formation library helpers', () => {
     expect(uniqueFormationName('Spread Right', ['Spread Right', 'Spread Right 2'])).toBe(
       'Spread Right 3',
     )
+  })
+
+  it('duplicates a formation with a unique name and fresh player ids', () => {
+    const copy = cloneFormation(spread, ['Spread Right'])
+    expect(copy.id).not.toBe(spread.id)
+    expect(copy.name).toBe('Spread Right copy')
+    expect(copy.players).toHaveLength(spread.players.length)
+    expect(copy.players[0].id).not.toBe(center.id)
+    expect(copy.players[1].pos).toEqual(receiver.pos)
+    expect(copy.players[1].pos).not.toBe(receiver.pos)
+    expect(copy.players[1].route).toBeNull()
+
+    const second = cloneFormation(spread, ['Spread Right', 'Spread Right copy'])
+    expect(second.name).toBe('Spread Right copy 2')
   })
 
   it('clones a lineup with fresh ids and no routes', () => {
