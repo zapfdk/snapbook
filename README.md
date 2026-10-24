@@ -1,0 +1,154 @@
+# Snapbook
+
+A 5v5 flag football playbook studio. Design formations and routes on a 25-yard
+field, print wrist-coach cards, and print a numbered route tree poster.
+
+## Run it
+
+```bash
+npm install
+npm run dev
+```
+
+Open the URL Vite prints (usually <http://localhost:5173>). Everything is stored
+in the browser with `localStorage`; there is no account or server.
+
+```bash
+npm test        # archive, route library and route tree tests
+npm run build   # typecheck and production build
+```
+
+## What it does
+
+- **Playbook** — start a blank playbook, browse plays in a visual grid with
+  quick previews, search and filter them, and open any play in the designer.
+- **Team** — set the playbook and squad name, plus each player's name, marker
+  label, number and colour once for every formation and play.
+- **Route library** — browse all 18 route presets with full-field previews,
+  group filters and coaching notes for each route.
+- **Designer** — drag five players, apply numbered route presets, draw custom
+  route points, adjust labels/numbers/colours, tag plays, and save alignments as
+  reusable formations. The experimental **Sketch** mode turns a hand-drawn
+  stroke into the closest preset, or a freehand route when nothing fits.
+- **Wrist coach** — choose the card order, paper insert size, grid, margins and
+  ink options, then export a vector PDF at the exact insert dimensions.
+- **Route tree** — print a landscape or portrait numbered route tree (1–9 plus
+  the 0 wheel) with a colour-coded route index. Field lines, the legend, title
+  and monochrome mode are optional; monochrome uses solid, dashed and dotted
+  line depths instead of colour.
+- **Backup** — export a readable `.snapbook.json` file, import one back
+  (including older backups), or export a password-protected `.pbc` file for
+  Playbook Creator.
+
+## Saving and opening
+
+Every change is written to this browser's `localStorage` automatically, so the
+playbook, wrist-coach settings and route-tree options are restored when you
+come back. The **Saved locally** badge in the playbook header confirms this.
+Nothing is sent to a server.
+
+## Experimental sketch
+
+In the Designer, choose **Sketch** (the wand button) and draw a route from a
+player marker with a mouse or finger. When you release, Snapbook compares the
+shape with the 18 built-in routes and applies the closest match. If the line is
+too different, it is kept as a simplified freehand route instead. Recognition
+is best-effort: clear the route or refine it with the normal route tools
+whenever the snap is not what you meant.
+
+**New playbook** starts a blank playbook with the six starter formations and
+standard tags. It replaces the playbook currently open in the browser, so the
+dialog offers **Download current backup** before you create it. **Import a
+playbook** (from the Export menu or the new-playbook dialog) also replaces the
+current playbook with the imported file.
+
+## Team setup
+
+Open **Team** in the header (or the gear beside the playbook name) to manage
+shared team details. Each roster role has a player name, marker label, jersey
+number and marker color. Editing a role updates every formation and play using
+that role while keeping alignments and routes in place. The same page edits the
+playbook name and team/squad name.
+
+Marker colors accept the shared palette or any custom color. Label ink switches
+between dark and light automatically so custom markers stay readable on the
+field, in diagrams and in wrist-coach printouts. Roster settings are ordinary
+player data, so they travel in the existing Snapbook backup with no extra file
+format.
+
+## Snapbook file format
+
+The default backup is readable JSON with `"format": "snapbook"`, a schema
+`"version": 2`, and a `"minReaderVersion": 2` compatibility header. It is
+designed to be opened in any text editor and imported again after hand edits.
+Formations are defined once, plays refer to a formation by name, and each play
+stores only its routes plus any per-play player changes. Coordinates are yards
+relative to the player's alignment: `x` is to the right, `y` is downfield.
+
+```json
+{
+  "format": "snapbook",
+  "version": 2,
+  "minReaderVersion": 2,
+  "playbook": {
+    "name": "Friday night",
+    "level": "5v5",
+    "tags": [{ "name": "Quick game", "color": "#F4C95D" }],
+    "formations": [
+      {
+        "name": "Spread Right",
+        "players": [
+          { "label": "C", "role": "Center", "color": "#F1EEE4", "x": 0, "y": 0 }
+        ]
+      }
+    ],
+    "plays": [
+      {
+        "name": "Mesh Right",
+        "code": "MESH",
+        "formation": "Spread Right",
+        "tags": ["Quick game"],
+        "routes": { "C": [{ "x": 0, "y": 5 }] }
+      }
+    ]
+  }
+}
+```
+
+Route points take optional `curve` values; use a `lineup` entry to move a player
+or change their label, number or color for one play.
+
+The header is version-negotiated. `version` is the writer's schema revision and
+`minReaderVersion` is the oldest reader that can safely open the file. Readers
+that understand the header accept files whose minimum is at or below their own
+version and ignore unknown fields, so additive revisions stay readable. A file
+without `minReaderVersion` is treated as requiring its own `version`. A change
+that older readers cannot safely ignore, such as a new field size, must raise
+`minReaderVersion` so those readers refuse the file instead of silently losing
+data. Unknown fields are not preserved when a file is re-exported. Sketch and
+freehand routes use the ordinary route-point list, so they need no extra format
+fields. Older `snapbook.v1` backups still import unchanged.
+
+## Playbook Creator (.pbc) compatibility
+
+The PBC export writes the same encrypted container as PBC 0.22.0:
+
+- `Playbook-Creator\n0.22.0\nplaybook\n` preamble
+- PBKDF2/HMAC-SHA-256, 10,000 iterations, 16-byte salt
+- AES-256-GCM with a 12-byte IV and a 16-byte authentication tag
+- Boost.Serialization text archive version 19, with the same class/object IDs
+  and token order as the native serializer
+
+The archive writer is covered by tests that compare its token stream with a
+native Boost.Serialization reference. Formation, category and play names must
+be unique because PBC stores them as map keys; the exporter reports this before
+writing a file.
+
+Reading `.pbc` files back into Snapbook is not implemented. Use the
+`.snapbook.json` backup for round-tripping between Snapbook browsers.
+
+## Stack
+
+React 19, TypeScript, Vite, Tailwind CSS 4, Zustand, jsPDF and lucide-react.
+No backend is required.
+# snapbook
