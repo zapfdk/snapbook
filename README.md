@@ -40,6 +40,8 @@ npm run build   # typecheck and production build
   the 0 wheel) with a colour-coded route index. Field lines, the legend, title
   and monochrome mode are optional; monochrome uses solid, dashed and dotted
   line depths instead of colour.
+- **Share** — generate a read-only link that carries the whole playbook in the
+  URL, with no upload and no account.
 - **Backup** — export a readable `.snapbook.json` file, import one back
   (including older backups), or export a password-protected `.pbc` file for
   Playbook Creator.
@@ -50,6 +52,15 @@ Every change is written to this browser's `localStorage` automatically, so the
 playbook, wrist-coach settings and route-tree options are restored when you
 come back. The **Saved locally** badge in the playbook header confirms this.
 Nothing is sent to a server.
+
+## Share links
+
+**Share** in the header builds a link with the complete playbook base64 encoded
+in the URL fragment. Opening it shows a read-only copy of the plays, route
+library, formations, tags and team roster. Nothing is uploaded. The shared view
+never reads from or writes to the playbook saved in the recipient’s browser, and
+**Open my playbook** returns to their own copy. Long playbooks create long
+links, so send the complete link in one piece.
 
 ## Experimental sketch
 

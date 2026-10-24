@@ -9,6 +9,7 @@ import {
   PenTool,
   Plus,
   Printer,
+  Share2,
   Upload,
   Users,
 } from 'lucide-react'
@@ -26,6 +27,7 @@ interface AppHeaderProps {
   onExportPbc: () => void
   onExportNative: () => void
   onImport: () => void
+  onShare: () => void
 }
 
 const navItems: Array<{ id: View; label: string; icon: typeof Grid2X2 }> = [
@@ -45,6 +47,7 @@ export function AppHeader({
   onExportPbc,
   onExportNative,
   onImport,
+  onShare,
 }: AppHeaderProps) {
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -117,6 +120,15 @@ export function AppHeader({
           >
             <Plus size={15} />
             New play
+          </button>
+          <button
+            className="btn btn-secondary !px-2 min-[380px]:!px-4"
+            onClick={onShare}
+            aria-label="Share playbook"
+            title="Share a read-only link"
+          >
+            <Share2 size={15} />
+            <span className="hidden sm:inline">Share</span>
           </button>
           <div className="relative" ref={menuRef}>
             <button

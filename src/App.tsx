@@ -1,18 +1,22 @@
 import { useEffect, useRef, useState } from 'react'
-import { Plus } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, Plus } from 'lucide-react'
 import { AppHeader, type View } from './components/AppHeader'
+import { Logo } from './components/Logo'
 import { NewPlayDialog } from './components/NewPlayDialog'
 import { NewPlaybookDialog } from './components/NewPlaybookDialog'
 import { PbcExportDialog } from './components/PbcExportDialog'
 import { Modal } from './components/Modal'
+import { ShareDialog } from './components/ShareDialog'
 import { Toast, type ToastMessage } from './components/Toast'
 import { PlaysView } from './views/PlaysView'
 import { DesignView } from './views/DesignView'
 import { WristCoachView } from './views/WristCoachView'
 import { RouteTreeView } from './views/RouteTreeView'
 import { TeamView } from './views/TeamView'
+import { SharedPlaybookView } from './views/SharedPlaybookView'
 import { usePlaybook } from './store/playbook'
 import { exportNative, importNative } from './lib/files'
+import { SHARE_HASH_PREFIX, sharePlaybookFromHash } from './lib/share'
 import type { Playbook } from './types'
 
 interface PendingImport {
@@ -20,7 +24,92 @@ interface PendingImport {
   playbook: Playbook
 }
 
+interface SharedLink {
+  playbook: Playbook | null
+  error: string | null
+}
+
+function readSharedLink(): SharedLink | null {
+  if (!window.location.hash.startsWith(SHARE_HASH_PREFIX)) return null
+  try {
+    return { playbook: sharePlaybookFromHash(window.location.hash), error: null }
+  } catch (error) {
+    return {
+      playbook: null,
+      error:
+        error instanceof Error ? error.message : 'This share link could not be opened.',
+    }
+  }
+}
+
+/**
+ * Share links render their own read-only copy of the playbook and never touch
+ * the playbook persisted in this browser.
+ */
 export default function App() {
+  const [sharedLink, setSharedLink] = useState<SharedLink | null>(readSharedLink)
+
+  useEffect(() => {
+    const onHashChange = () => setSharedLink(readSharedLink())
+    window.addEventListener('hashchange', onHashChange)
+    return () => window.removeEventListener('hashchange', onHashChange)
+  }, [])
+
+  const exitSharedLink = () => {
+    window.history.replaceState(
+      null,
+      '',
+      `${window.location.pathname}${window.location.search}`,
+    )
+    setSharedLink(null)
+    window.scrollTo({ top: 0 })
+  }
+
+  if (sharedLink) {
+    return sharedLink.playbook ? (
+      <SharedPlaybookView playbook={sharedLink.playbook} onExit={exitSharedLink} />
+    ) : (
+      <InvalidSharedLink
+        message={sharedLink.error ?? 'This share link could not be opened.'}
+        onExit={exitSharedLink}
+      />
+    )
+  }
+
+  return <LocalPlaybookApp />
+}
+
+function InvalidSharedLink({ message, onExit }: { message: string; onExit: () => void }) {
+  return (
+    <div className="min-h-screen bg-ink-950">
+      <header className="border-b border-line/80 bg-ink-950">
+        <div className="mx-auto flex h-[68px] max-w-[1500px] items-center px-4 sm:px-6 lg:px-8">
+          <Logo />
+        </div>
+      </header>
+      <main className="mx-auto max-w-lg px-4 pt-20 sm:px-6">
+        <div className="panel flex flex-col items-center px-6 py-9 text-center">
+          <span className="grid h-12 w-12 place-items-center rounded-xl bg-coral/10 text-coral">
+            <AlertTriangle size={22} />
+          </span>
+          <h1 className="mt-4 font-display text-2xl font-bold text-chalk">
+            This share link can’t be opened
+          </h1>
+          <p className="mt-2 text-sm leading-relaxed text-fog">{message}</p>
+          <button className="btn btn-primary mt-5" onClick={onExit}>
+            <ArrowLeft size={15} />
+            Open my playbook
+          </button>
+          <p className="mt-4 text-[0.68rem] leading-relaxed text-slate-moss">
+            Your own playbook has not been changed.
+          </p>
+        </div>
+      </main>
+    </div>
+  )
+}
+
+function LocalPlaybookApp() {
   const playbook = usePlaybook((state) => state.playbook)
   const importPlaybook = usePlaybook((state) => state.importPlaybook)
   const createPlaybook = usePlaybook((state) => state.createPlaybook)
@@ -30,6 +119,7 @@ export default function App() {
   const [newPlayOpen, setNewPlayOpen] = useState(false)
   const [newPlaybookOpen, setNewPlaybookOpen] = useState(false)
   const [pbcOpen, setPbcOpen] = useState(false)
+  const [shareOpen, setShareOpen] = useState(false)
   const [toast, setToast] = useState<ToastMessage | null>(null)
   const [pendingImport, setPendingImport] = useState<PendingImport | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -131,6 +221,7 @@ export default function App() {
           notify('Snapbook backup downloaded.')
         }}
         onImport={pickImportFile}
+        onShare={() => setShareOpen(true)}
       />
 
       <input
@@ -210,6 +301,13 @@ export default function App() {
         onClose={() => setPbcOpen(false)}
         playbook={playbook}
         onSuccess={(message) => notify(message)}
+      />
+
+      <ShareDialog
+        open={shareOpen}
+        playbook={playbook}
+        onClose={() => setShareOpen(false)}
+        onNotify={notify}
       />
 
       <Modal
