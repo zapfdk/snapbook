@@ -67,43 +67,15 @@ development app, with a two-week production window once 50 are linked).
 
 Dropbox's Developer Terms require a privacy policy that describes what the app
 does with user data, even though the Branding tab has no documented URL field
-for it. Publish one somewhere stable — the GitHub Pages site is fine — and keep
-the link handy for production review.
+for it. Snapbook publishes one at
 
-Draft, written to match what the code actually does. Review it and publish it:
+<https://zapfdk.github.io/snapbook/privacy.html>
 
-> **Snapbook privacy policy**
->
-> Snapbook is a flag football playbook editor that runs entirely in your
-> browser. There is no Snapbook account and no Snapbook server that receives
-> your data. Questions or requests can be raised on the project's
-> [GitHub issue tracker](https://github.com/zapfdk/snapbook/issues).
->
-> **Data stored on your device.** Your playbook, roster, route library,
-> wrist-coach settings and route-tree options are saved in your browser's local
-> storage. They stay there until you clear site data, use the app's reset
-> options, or replace them by importing a playbook.
->
-> **Dropbox, only if you connect it.** If you choose to connect Dropbox,
-> Snapbook asks Dropbox for access to four permissions: read your account's
-> basic information (name and email, used only to label the connection), read
-> and write files inside its own app folder, and read metadata about that folder.
-> It writes a single file, `snapbook.json`, at `Apps/Snapbook/snapbook.json`
-> and reads it back. Snapbook cannot see or change anything else in your Dropbox,
-> and no data passes through a third-party service. When you disconnect,
-> Snapbook forgets the Dropbox access tokens stored in your browser; the
-> `snapbook.json` file remains in your Dropbox until you delete it.
->
-> **Sharing.** Share links put the playbook in the URL fragment, which is
-> decoded by the recipient's browser. Nothing is uploaded to make a link.
->
-> **No tracking.** Snapbook has no analytics, no advertising and no cookies. It
-> loads no third-party scripts, fonts or images.
->
-> **Deleting your data.** Clear this site's data in your browser to remove
-> everything stored locally. To remove the Dropbox copy, delete
-> `snapbook.json` from the app folder, or revoke Snapbook in your Dropbox
-> account's connected-apps settings.
+which is `public/privacy.html` in this repository. It covers local storage, the
+four Dropbox permissions, the single `snapbook.json` file and share links, and
+it points questions at the GitHub issue tracker rather than an email address.
+Keep it in step with the code — it is the version users and Dropbox see — and
+paste the URL wherever the production application asks for a privacy policy.
 
 ## Regenerate the PNGs
 
