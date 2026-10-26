@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowUpRight, Pencil, Plus, Search, Trash2, X } from 'lucide-react'
+import { ArrowUpRight, Copy, Pencil, Plus, Search, Trash2, X } from 'lucide-react'
 import { Modal } from './Modal'
 import { RoutePreview } from './RoutePreview'
 import { RouteLibraryEditor } from './RouteLibraryEditor'
@@ -23,6 +23,7 @@ interface EditorState {
 export function RouteLibraryTab() {
   const playbook = usePlaybook(selectActivePlaybook)
   const addRoute = usePlaybook((state) => state.addRoute)
+  const duplicateRoute = usePlaybook((state) => state.duplicateRoute)
   const updateRoute = usePlaybook((state) => state.updateRoute)
   const deleteRoute = usePlaybook((state) => state.deleteRoute)
 
@@ -74,6 +75,14 @@ export function RouteLibraryTab() {
     else updateRoute(route.id, route)
     setEditor(null)
     if (preview?.id === route.id) setPreview(null)
+  }
+
+  /** Copies a route and opens the copy, so a variant never changes the original. */
+  const copyAndEdit = (route: LibraryRoute) => {
+    const copy = duplicateRoute(route.id)
+    if (!copy) return
+    setPreview(null)
+    setEditor({ route: copy, isNew: false })
   }
 
   return (
@@ -197,6 +206,17 @@ export function RouteLibraryTab() {
                       className="icon-btn border border-white/10 bg-ink-950/75 text-chalk backdrop-blur hover:bg-ink-800"
                       onClick={(event) => {
                         event.stopPropagation()
+                        copyAndEdit(route)
+                      }}
+                      aria-label={`Duplicate ${route.name}`}
+                      title="Duplicate route"
+                    >
+                      <Copy size={13} />
+                    </button>
+                    <button
+                      className="icon-btn border border-white/10 bg-ink-950/75 text-chalk backdrop-blur hover:bg-ink-800"
+                      onClick={(event) => {
+                        event.stopPropagation()
                         setEditor({ route, isNew: false })
                       }}
                       aria-label={`Edit ${route.name}`}
@@ -257,6 +277,7 @@ export function RouteLibraryTab() {
           setPreview(null)
           setEditor({ route, isNew: false })
         }}
+        onDuplicate={copyAndEdit}
       />
 
       <RouteLibraryEditor
@@ -309,10 +330,12 @@ function RoutePreviewModal({
   route,
   onClose,
   onEdit,
+  onDuplicate,
 }: {
   route: LibraryRoute | null
   onClose: () => void
   onEdit: (route: LibraryRoute) => void
+  onDuplicate: (route: LibraryRoute) => void
 }) {
   if (!route) return null
   const depth = routeDepth(route.points)
@@ -328,11 +351,15 @@ function RoutePreviewModal({
       footer={
         <div className="flex flex-wrap items-center justify-between gap-3">
           <span className="text-[0.68rem] text-slate-moss">
-            Apply this route to any receiver in the Designer.
+            Duplicate to build a variant, or edit this route for every play.
           </span>
           <div className="flex gap-2">
             <button className="btn btn-secondary" onClick={onClose}>
               Close
+            </button>
+            <button className="btn btn-secondary" onClick={() => onDuplicate(route)}>
+              <Copy size={14} />
+              Duplicate
             </button>
             <button className="btn btn-primary" onClick={() => onEdit(route)}>
               <Pencil size={14} />

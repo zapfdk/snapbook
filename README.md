@@ -27,9 +27,9 @@ npm run build   # typecheck and production build
   play in the designer.
 - **Team** — set the playbook and squad name, plus each player's name, marker
   label, number and colour once for every formation and play.
-- **Route library** — start with 18 coaching presets, then add, edit and
-  delete your own. Each route has a full-field preview, group, colour and
-  coaching note, and its points are editable on the field.
+- **Route library** — start with 18 coaching presets, then add, duplicate,
+  edit and delete your own. Each route has a full-field preview, group, colour
+  and coaching note, and its points are editable on the field.
 - **Formation library** — browse every starting alignment, create new ones,
   rename them, and drag players to realign them. Editing a formation also
   re-aligns the plays already built from it while leaving their routes intact.
@@ -200,9 +200,12 @@ new playbook starts from the standard set.
 
 **Route library** (Playbook → Route library) uses a visual editor. Add a new
 route, draw its points on the field, then drag the round handles to reshape it.
-Name, group, colour and coaching note are editable. Applying an edited route to
-a player copies its current points; plays that already use older points keep
-them. Deleting a preset is the same: existing plays are untouched.
+Name, group, colour and coaching note are editable. **Duplicate** copies a
+route — from its card or from the full-size preview — with a free name like
+`Post copy` and opens the copy, so a variant never changes the original.
+Applying an edited route to a player copies its current points; plays that
+already use older points keep them. Deleting a preset is the same: existing
+plays are untouched.
 
 **Formations** (Playbook → Formations) can be added from a fresh five-player
 lineup or created from the current play with **Save formation** in the

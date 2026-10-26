@@ -99,6 +99,26 @@ describe('playbook library store', () => {
     expect(copy.formations[0].id).not.toBe(alpha.formations[0].id)
   })
 
+  it('duplicates a route beside its source with a free name', () => {
+    const source = alpha.routes[2]
+    const copy = store.usePlaybook.getState().duplicateRoute(source.id)
+
+    expect(copy).not.toBeNull()
+    expect(copy!.id).not.toBe(source.id)
+    expect(copy!.name).toBe(`${source.name} copy`)
+    expect(copy!.points).toEqual(source.points)
+    expect(copy!.points[0]).not.toBe(source.points[0])
+
+    const routes = store.usePlaybook.getState().playbooks[0].routes
+    expect(routes[3].id).toBe(copy!.id)
+    expect(routes[2]).toEqual(source)
+
+    const again = store.usePlaybook.getState().duplicateRoute(source.id)
+    expect(again!.name).toBe(`${source.name} copy 2`)
+
+    expect(store.usePlaybook.getState().duplicateRoute('missing')).toBeNull()
+  })
+
   it('deletes a playbook but never the last one', () => {
     store.usePlaybook.getState().deletePlaybook(beta.id)
     expect(store.usePlaybook.getState().playbooks.map((playbook) => playbook.id)).toEqual([

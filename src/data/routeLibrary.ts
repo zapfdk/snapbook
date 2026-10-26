@@ -1,5 +1,5 @@
 import { ROUTE_PRESETS, type RoutePreset } from './routePresets'
-import type { LibraryRoute, RouteGroup } from '../types'
+import { createId, type LibraryRoute, type RouteGroup } from '../types'
 
 export type { RouteGroup }
 
@@ -107,4 +107,27 @@ export function formatRouteBreak(points: RoutePreset['points']) {
   if (breakDepth === null) return 'Single stem'
   if (breakDepth < 0) return 'Release behind LOS'
   return `Break at ${breakDepth} yd`
+}
+
+/** Route names are unique case-insensitively, so a copy gets a free one. */
+export function uniqueRouteName(base: string, names: string[]): string {
+  const used = new Set(names.map((name) => name.trim().toLowerCase()))
+  const cleaned = base.trim() || 'New route'
+  if (!used.has(cleaned.toLowerCase())) return cleaned
+  let suffix = 2
+  while (used.has(`${cleaned} ${suffix}`.toLowerCase())) suffix += 1
+  return `${cleaned} ${suffix}`
+}
+
+/** An editable copy of a library route, with its own id and point objects. */
+export function cloneLibraryRoute(
+  route: LibraryRoute,
+  existingNames: string[],
+): LibraryRoute {
+  return {
+    ...route,
+    id: createId(),
+    name: uniqueRouteName(`${route.name} copy`, existingNames),
+    points: route.points.map((point) => ({ ...point })),
+  }
 }

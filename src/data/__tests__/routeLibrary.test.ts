@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest'
 import {
   ROUTE_GROUPS,
   ROUTE_LIBRARY,
+  cloneLibraryRoute,
   cloneRouteLibrary,
   formatRouteBreak,
   routeBreak,
   routeDepth,
+  uniqueRouteName,
 } from '../routeLibrary'
 
 describe('route library', () => {
@@ -33,6 +35,35 @@ describe('route library', () => {
     expect(formatRouteBreak(find('go').points)).toBe('Single stem')
     expect(formatRouteBreak(find('post').points)).toBe('Break at 6 yd')
     expect(formatRouteBreak(find('swing').points)).toBe('Release behind LOS')
+  })
+
+  it('duplicates a route with a free name and its own points', () => {
+    const source = ROUTE_LIBRARY.find((route) => route.id === 'post')!
+    const copy = cloneLibraryRoute(
+      source,
+      ROUTE_LIBRARY.map((route) => route.name),
+    )
+
+    expect(copy.id).not.toBe(source.id)
+    expect(copy.name).toBe('Post copy')
+    expect(copy.group).toBe(source.group)
+    expect(copy.color).toBe(source.color)
+    expect(copy.note).toBe(source.note)
+    expect(copy.points).toEqual(source.points)
+    expect(copy.points[0]).not.toBe(source.points[0])
+
+    const again = cloneLibraryRoute(source, [
+      ...ROUTE_LIBRARY.map((route) => route.name),
+      'Post copy',
+    ])
+    expect(again.name).toBe('Post copy 2')
+  })
+
+  it('finds a free route name', () => {
+    expect(uniqueRouteName('New route', [])).toBe('New route')
+    expect(uniqueRouteName('post', ['Post'])).toBe('post 2')
+    expect(uniqueRouteName('Post', ['Post', 'Post 2'])).toBe('Post 3')
+    expect(uniqueRouteName('   ', [])).toBe('New route')
   })
 
   it('clones library routes so one playbook cannot mutate another', () => {

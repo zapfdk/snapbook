@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { DEFAULT_PLAYBOOK, createBlankPlaybook } from '../data/defaults'
-import { cloneRouteLibrary } from '../data/routeLibrary'
+import { cloneLibraryRoute, cloneRouteLibrary } from '../data/routeLibrary'
 import { applyRosterGroupPatch, type RosterGroupPatch } from '../lib/roster'
 import { applyFormationUpdate, cloneFormation } from '../lib/formations'
 import { clonePlaybook, uniquePlaybookName } from '../lib/library'
@@ -98,6 +98,7 @@ export interface PlaybookState {
   flipPlayerRoute: (playId: string, playerId: string) => void
   clearPlayerRoute: (playId: string, playerId: string) => void
   addRoute: (route: LibraryRoute) => void
+  duplicateRoute: (routeId: string) => LibraryRoute | null
   updateRoute: (routeId: string, patch: Partial<Omit<LibraryRoute, 'id'>>) => void
   deleteRoute: (routeId: string) => void
   addFormation: (formation: Formation) => void
@@ -518,6 +519,26 @@ export const usePlaybook = create<PlaybookState>()(
               routes: [...pb.routes, route],
             })),
           })),
+
+        duplicateRoute: (routeId) => {
+          const state = get()
+          const playbook = activePlaybook(state)
+          const source = playbook.routes.find((route) => route.id === routeId)
+          if (!source) return null
+          const copy = cloneLibraryRoute(
+            source,
+            playbook.routes.map((route) => route.name),
+          )
+          const index = playbook.routes.findIndex((route) => route.id === routeId)
+          set({
+            playbooks: patchActive(state, (pb) => {
+              const routes = [...pb.routes]
+              routes.splice(index + 1, 0, copy)
+              return { ...pb, routes }
+            }),
+          })
+          return copy
+        },
 
         updateRoute: (routeId, patch) =>
           set((state) => ({
