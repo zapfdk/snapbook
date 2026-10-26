@@ -87,6 +87,9 @@ Cloud sync is disabled until a Dropbox app key is present at build time:
    variable under **Settings → Secrets and variables → Actions → Variables**.
    The deploy workflow passes it to `npm run build`.
 
+App name, description, icon files and the rest of the authorization-screen
+branding are in [branding/dropbox](branding/dropbox/README.md).
+
 Then open **Sync → Connect Dropbox**. The app key is a public client
 identifier; the app has no client secret in the repository or in the browser.
 

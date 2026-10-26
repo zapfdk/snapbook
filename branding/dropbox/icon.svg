@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="Snapbook">
+  <title>Snapbook</title>
+  <rect width="1024" height="1024" fill="#D8FF63" />
+  <!-- Same mark as the web/PWA icon, drawn on a 512 grid and doubled to 1024. -->
+  <g transform="scale(2)">
+    <g fill="none" stroke="#1B2408" stroke-width="18" stroke-linecap="round" opacity="0.28">
+      <path d="M88 144h336" />
+      <path d="M88 256h336" />
+      <path d="M88 368h336" />
+    </g>
+    <path
+      d="M152 344C228 344 268 268 330 214"
+      fill="none"
+      stroke="#1B2408"
+      stroke-width="36"
+      stroke-linecap="round"
+    />
+    <g transform="translate(330 214) rotate(-41)">
+      <path d="M36 0 -22 -32 -22 32Z" fill="#1B2408" />
+    </g>
+    <circle cx="152" cy="344" r="42" fill="#1B2408" />
+  </g>
+</svg>
