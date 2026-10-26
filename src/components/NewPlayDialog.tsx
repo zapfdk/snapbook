@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { ArrowRight, Check } from 'lucide-react'
 import { Modal } from './Modal'
 import { PlayDiagram } from './PlayDiagram'
-import { usePlaybook } from '../store/playbook'
+import { selectActivePlaybook, usePlaybook } from '../store/playbook'
 import { cx } from '../lib/files'
 
 interface NewPlayDialogProps {
@@ -12,7 +12,7 @@ interface NewPlayDialogProps {
 }
 
 export function NewPlayDialog({ open, onClose, onCreate }: NewPlayDialogProps) {
-  const playbook = usePlaybook((state) => state.playbook)
+  const playbook = usePlaybook(selectActivePlaybook)
   const createPlay = usePlaybook((state) => state.createPlay)
 
   const [name, setName] = useState('')

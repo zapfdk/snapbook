@@ -13,14 +13,12 @@ import {
 import type { CloudSyncState } from '../lib/cloudSync'
 import { dropboxRedirectUri } from '../lib/dropbox'
 import { cx } from '../lib/files'
-import type { Playbook } from '../types'
 import { Modal } from './Modal'
 
 interface SyncDialogProps {
   open: boolean
   onClose: () => void
   sync: CloudSyncState
-  localPlaybook: Playbook
   onConnect: () => void
   onDisconnect: () => void
   onSyncNow: () => void
@@ -32,7 +30,6 @@ export function SyncDialog({
   open,
   onClose,
   sync,
-  localPlaybook,
   onConnect,
   onDisconnect,
   onSyncNow,
@@ -47,7 +44,7 @@ export function SyncDialog({
       open={open}
       onClose={onClose}
       title="Cloud sync"
-      description="Keep one playbook in step across the devices you use."
+      description="Keep every playbook in step across the devices you use."
     >
       {!sync.configured ? (
         <DropboxSetup />
@@ -56,7 +53,6 @@ export function SyncDialog({
           {sync.conflict ? (
             <ConflictPanel
               conflict={sync.conflict}
-              localPlaybook={localPlaybook}
               busy={busy}
               onResolveConflict={onResolveConflict}
               onExportBackup={onExportBackup}
@@ -231,8 +227,8 @@ function ConnectPanel({
         <div>
           <p className="text-sm font-semibold text-chalk">Connect your Dropbox</p>
           <p className="mt-1 text-[0.74rem] leading-relaxed text-fog">
-            Snapbook writes one file to its own app folder. It cannot browse the rest of
-            your Dropbox, and nothing syncs until you connect.
+            Snapbook writes one file holding all your playbooks to its own app folder. It
+            cannot browse the rest of your Dropbox, and nothing syncs until you connect.
           </p>
         </div>
       </div>
@@ -300,17 +296,16 @@ function ErrorNotice({ message }: { message: string }) {
 
 function ConflictPanel({
   conflict,
-  localPlaybook,
   busy,
   onResolveConflict,
   onExportBackup,
 }: {
   conflict: NonNullable<CloudSyncState['conflict']>
-  localPlaybook: Playbook
   busy: boolean
   onResolveConflict: (choice: 'local' | 'remote') => void
   onExportBackup: () => void
 }) {
+  const single = conflict.items.length === 1
   return (
     <div className="rounded-xl border border-coral/30 bg-coral/[0.055] px-4 py-4">
       <div className="flex items-start gap-3">
@@ -318,26 +313,31 @@ function ConflictPanel({
           <AlertTriangle size={17} />
         </span>
         <div>
-          <p className="text-sm font-semibold text-chalk">Both copies changed</p>
+          <p className="text-sm font-semibold text-chalk">
+            {single
+              ? 'One playbook changed in both places'
+              : `${conflict.items.length} playbooks changed in both places`}
+          </p>
           <p className="mt-1 text-[0.74rem] leading-relaxed text-fog">
-            Dropbox has changes this browser has not seen, and this browser has its own
-            unsynced edits. Nothing has been overwritten.
+            Dropbox has edits this browser has not seen, and these playbooks also have
+            unsynced edits here. Nothing has been overwritten.
           </p>
         </div>
       </div>
 
-      <div className="mt-3 grid gap-2 sm:grid-cols-2">
-        <CompareCard
-          title="This browser"
-          playbook={localPlaybook}
-          tone="local"
-        />
-        <CompareCard
-          title="Dropbox"
-          playbook={conflict.remotePlaybook}
-          tone="remote"
-        />
-      </div>
+      <ul className="mt-3 grid gap-2">
+        {conflict.items.map((item) => (
+          <li
+            key={item.name}
+            className="rounded-lg border border-line bg-ink-900 px-3 py-2.5"
+          >
+            <p className="truncate text-[0.78rem] font-semibold text-chalk">{item.name}</p>
+            <p className="mt-0.5 font-mono text-[0.62rem] uppercase tracking-[0.08em] text-slate-moss">
+              here {item.localPlays} plays · Dropbox {item.remotePlays} plays
+            </p>
+          </li>
+        ))}
+      </ul>
 
       <div className="mt-4 grid gap-2">
         <button
@@ -345,57 +345,26 @@ function ConflictPanel({
           onClick={() => onResolveConflict('local')}
           disabled={busy}
         >
-          Keep this browser’s copy
+          Keep this browser’s {single ? 'copy' : 'copies'}
         </button>
         <button
           className="btn btn-secondary w-full justify-center"
           onClick={() => onResolveConflict('remote')}
           disabled={busy}
         >
-          Use the Dropbox copy
+          Use the Dropbox {single ? 'copy' : 'copies'}
         </button>
         <button
           className="btn btn-ghost w-full justify-center !text-fog"
           onClick={onExportBackup}
         >
           <Download size={14} />
-          Download a backup of this browser first
+          Download a backup of the open playbook
         </button>
       </div>
       <p className="mt-3 text-[0.66rem] leading-relaxed text-slate-moss">
-        Keeping this browser overwrites the Dropbox file. Using the Dropbox copy replaces
-        the playbook here; wrist-coach and route-tree settings stay on this device either
-        way.
-      </p>
-    </div>
-  )
-}
-
-function CompareCard({
-  title,
-  playbook,
-  tone,
-}: {
-  title: string
-  playbook: Playbook
-  tone: 'local' | 'remote'
-}) {
-  return (
-    <div
-      className={cx(
-        'rounded-lg border px-3 py-2.5',
-        tone === 'local'
-          ? 'border-line bg-ink-900'
-          : 'border-[#3a4b3f] bg-ink-850',
-      )}
-    >
-      <p className="mono-label">{title}</p>
-      <p className="mt-1 truncate text-[0.78rem] font-semibold text-chalk">
-        {playbook.name}
-      </p>
-      <p className="mt-0.5 text-[0.64rem] text-slate-moss">
-        {playbook.plays.length} plays · {playbook.formations.length} formations ·{' '}
-        {playbook.routes.length} routes
+        Playbooks only one side changed are merged automatically. This choice applies to
+        the playbooks listed above; wrist-coach and route-tree settings stay on this device.
       </p>
     </div>
   )
@@ -408,10 +377,11 @@ function WhatSyncs() {
         What syncs
       </p>
       <p className="mt-1.5 text-[0.7rem] leading-relaxed text-fog">
-        The whole playbook — plays, formations, routes, tags, team roster and names — is
-        stored as one readable <span className="font-mono text-[0.66rem]">snapbook.json</span>{' '}
-        file. Wrist-coach and route-tree settings stay on each device. Local saving keeps
-        working when sync is off.
+        Every playbook — plays, formations, routes, tags, team roster and names — travels
+        in one readable <span className="font-mono text-[0.66rem]">snapbook.json</span> file.
+        Edits to different playbooks on two devices merge on their own; only a playbook
+        changed in both places needs a decision. Wrist-coach and route-tree settings stay
+        on each device, and local saving keeps working when sync is off.
       </p>
     </div>
   )

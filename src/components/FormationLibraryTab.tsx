@@ -3,7 +3,7 @@ import { Copy, Pencil, Plus, Search, Trash2, X } from 'lucide-react'
 import { Modal } from './Modal'
 import { PlayDiagram } from './PlayDiagram'
 import { FormationLibraryEditor } from './FormationLibraryEditor'
-import { usePlaybook } from '../store/playbook'
+import { selectActivePlaybook, usePlaybook } from '../store/playbook'
 import { createFormationPlayers } from '../data/defaults'
 import { cloneFormationPlayers, formationUsage, uniqueFormationName } from '../lib/formations'
 import { createId, type Formation } from '../types'
@@ -14,7 +14,7 @@ interface EditorState {
 }
 
 export function FormationLibraryTab() {
-  const playbook = usePlaybook((state) => state.playbook)
+  const playbook = usePlaybook(selectActivePlaybook)
   const addFormation = usePlaybook((state) => state.addFormation)
   const duplicateFormation = usePlaybook((state) => state.duplicateFormation)
   const updateFormation = usePlaybook((state) => state.updateFormation)

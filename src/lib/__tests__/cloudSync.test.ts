@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_PLAYBOOK } from '../../data/defaults'
-import { serializeSnapbook } from '../files'
+import { serializeLibrary } from '../library'
+import { playbookHash } from '../syncLogic'
 import type { Playbook } from '../../types'
 
 const storage = (): Storage => {
@@ -21,9 +22,17 @@ const storage = (): Storage => {
   }
 }
 
+const book = (id: string, name: string): Playbook => ({
+  ...(JSON.parse(JSON.stringify(DEFAULT_PLAYBOOK)) as Playbook),
+  id,
+  name,
+})
+
 describe('cloud sync coordinator', () => {
-  const local = JSON.parse(JSON.stringify(DEFAULT_PLAYBOOK)) as Playbook
-  const remote = { ...local, name: 'Dropbox copy' }
+  const alpha = book('alpha', 'Alpha')
+  const beta = book('beta', 'Beta')
+  const localAlpha = { ...alpha, name: 'Alpha local' }
+  let remotePlaybooks: Playbook[] = [{ ...alpha, name: 'Alpha dropbox' }]
   let remoteRev = 'rev-new'
   let uploaded: { body: string; rev: string | null } | null = null
   let localStore: typeof import('../../store/playbook')
@@ -53,16 +62,17 @@ describe('cloud sync coordinator', () => {
       visibilityState: 'visible',
     })
 
+    // Connected to Dropbox, with `alpha` as it looked after the last sync.
     localStorage.setItem(
       'snapbook.cloud.dropbox.v1',
       JSON.stringify({
-        version: 1,
+        version: 2,
         refreshToken: 'refresh',
         accountLabel: 'Test Dropbox',
         accountId: 'dbid:test',
         remoteRev: 'rev-old',
         lastSyncedAt: '2026-10-24T12:00:00.000Z',
-        lastSyncedHash: 'old-local-hash',
+        baseline: { alpha: playbookHash(alpha) },
       }),
     )
     sessionStorage.setItem(
@@ -81,7 +91,7 @@ describe('cloud sync coordinator', () => {
           return new Response(JSON.stringify({ rev: remoteRev, path_display: '/snapbook.json' }))
         }
         if (url.endsWith('/2/files/download')) {
-          return new Response(serializeSnapbook(remote))
+          return new Response(serializeLibrary(remotePlaybooks))
         }
         if (url.endsWith('/2/files/upload')) {
           const args = JSON.parse(
@@ -99,26 +109,34 @@ describe('cloud sync coordinator', () => {
     )
 
     localStore = await import('../../store/playbook')
-    localStore.usePlaybook.setState({ playbook: local })
+    localStore.usePlaybook.setState({ playbooks: [localAlpha], activeId: localAlpha.id })
     sync = await import('../cloudSync')
   })
 
   it('stops on a conflict, can keep the local copy, then pulls later remote changes', async () => {
     await sync.initializeCloudSync()
     expect(sync.getCloudSyncState().phase).toBe('conflict')
-    expect(sync.getCloudSyncState().conflict?.remotePlaybook.name).toBe('Dropbox copy')
+    expect(sync.getCloudSyncState().conflict?.items[0].name).toBe('Alpha local')
 
     await sync.resolveCloudConflict('local')
     expect(sync.getCloudSyncState().phase).toBe('connected')
     expect(uploaded?.rev).toBe('rev-new')
-    expect(JSON.parse(uploaded!.body).playbook.name).toBe(DEFAULT_PLAYBOOK.name)
+    const uploadedLibrary = JSON.parse(uploaded!.body) as {
+      playbooks: Array<{ id: string; file: { playbook: Playbook } }>
+    }
+    expect(uploadedLibrary.playbooks.map((entry) => entry.id)).toEqual(['alpha'])
+    expect(uploadedLibrary.playbooks[0].file.playbook.name).toBe('Alpha local')
 
-    const nextRemote = { ...local, name: 'Remote after edit' }
-    Object.assign(remote, nextRemote)
+    // Dropbox now holds an edited Alpha plus a playbook this browser never saw.
+    remotePlaybooks = [{ ...alpha, name: 'Alpha dropbox later' }, beta]
     remoteRev = 'rev-remote-2'
 
     await sync.syncCloudNow()
     expect(sync.getCloudSyncState().phase).toBe('connected')
-    expect(localStore.usePlaybook.getState().playbook.name).toBe('Remote after edit')
+    const local = localStore.usePlaybook.getState().playbooks
+    expect(local.map((playbook) => playbook.name)).toEqual([
+      'Alpha dropbox later',
+      'Beta',
+    ])
   })
 })

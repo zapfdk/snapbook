@@ -5,6 +5,7 @@ import { Logo } from './components/Logo'
 import { NewPlayDialog } from './components/NewPlayDialog'
 import { NewPlaybookDialog } from './components/NewPlaybookDialog'
 import { PbcExportDialog } from './components/PbcExportDialog'
+import { PlaybookLibraryDialog } from './components/PlaybookLibraryDialog'
 import { Modal } from './components/Modal'
 import { ShareDialog } from './components/ShareDialog'
 import { SiteFooter } from './components/SiteFooter'
@@ -17,7 +18,7 @@ import { WristCoachView } from './views/WristCoachView'
 import { RouteTreeView } from './views/RouteTreeView'
 import { TeamView } from './views/TeamView'
 import { SharedPlaybookView } from './views/SharedPlaybookView'
-import { usePlaybook } from './store/playbook'
+import { selectActivePlaybook, usePlaybook } from './store/playbook'
 import { useCloudSync } from './hooks/useCloudSync'
 import { useServiceWorkerUpdate } from './hooks/useServiceWorkerUpdate'
 import { exportNative, importNative } from './lib/files'
@@ -33,6 +34,14 @@ interface PendingImport {
 interface SharedLink {
   playbook: Playbook | null
   error: string | null
+}
+
+/** The play a coach most likely wants when a playbook is opened. */
+function newestPlayId(playbook: Playbook): string | null {
+  if (!playbook.plays.length) return null
+  return [...playbook.plays].sort(
+    (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+  )[0].id
 }
 
 function readSharedLink(): SharedLink | null {
@@ -75,17 +84,20 @@ export default function App() {
 
   const editSharedCopy = () => {
     if (!sharedLink?.playbook) return
-    usePlaybook.getState().importPlaybook(sharedLink.playbook)
+    // The shared playbook becomes its own entry, so the open playbook is not
+    // overwritten by opening a link.
+    usePlaybook.getState().addPlaybook(sharedLink.playbook)
     exitSharedLink()
   }
 
   const mergeSharedCopy = () => {
     if (!sharedLink?.playbook) return
     const state = usePlaybook.getState()
-    const merged = mergeSharedPlaybook(state.playbook, sharedLink.playbook)
+    const active = selectActivePlaybook(state)
+    const merged = mergeSharedPlaybook(active, sharedLink.playbook)
     // Merging is additive, so keep the wrist-coach selection the user curated.
     const wristPlays = state.wrist.selectedPlayIds
-    state.importPlaybook(merged.playbook)
+    state.replaceActivePlaybook(merged.playbook)
     usePlaybook.getState().setWristPlays(wristPlays)
     exitSharedLink()
   }
@@ -94,7 +106,7 @@ export default function App() {
     sharedLink.playbook ? (
       <SharedPlaybookView
         playbook={sharedLink.playbook}
-        localPlaybook={usePlaybook.getState().playbook}
+        localPlaybook={selectActivePlaybook(usePlaybook.getState())}
         onEdit={editSharedCopy}
         onMerge={mergeSharedCopy}
         onExit={exitSharedLink}
@@ -152,9 +164,13 @@ function InvalidSharedLink({ message, onExit }: { message: string; onExit: () =>
 }
 
 function LocalPlaybookApp() {
-  const playbook = usePlaybook((state) => state.playbook)
-  const importPlaybook = usePlaybook((state) => state.importPlaybook)
+  const playbook = usePlaybook(selectActivePlaybook)
+  const playbooks = usePlaybook((state) => state.playbooks)
+  const addPlaybook = usePlaybook((state) => state.addPlaybook)
   const createPlaybook = usePlaybook((state) => state.createPlaybook)
+  const selectPlaybook = usePlaybook((state) => state.selectPlaybook)
+  const duplicatePlaybook = usePlaybook((state) => state.duplicatePlaybook)
+  const deletePlaybook = usePlaybook((state) => state.deletePlaybook)
   const cloud = useCloudSync()
 
   const [view, setView] = useState<View>('plays')
@@ -164,6 +180,7 @@ function LocalPlaybookApp() {
   const [pbcOpen, setPbcOpen] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
   const [syncOpen, setSyncOpen] = useState(false)
+  const [libraryOpen, setLibraryOpen] = useState(false)
   const [toast, setToast] = useState<ToastMessage | null>(null)
   const [pendingImport, setPendingImport] = useState<PendingImport | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -185,11 +202,7 @@ function LocalPlaybookApp() {
       return
     }
     if (!selectedPlayId || !playbook.plays.some((play) => play.id === selectedPlayId)) {
-      setSelectedPlayId(
-        [...playbook.plays].sort(
-          (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
-        )[0].id,
-      )
+      setSelectedPlayId(newestPlayId(playbook))
     }
   }, [playbook.plays, selectedPlayId])
 
@@ -236,7 +249,21 @@ function LocalPlaybookApp() {
     setSelectedPlayId(null)
     setView('plays')
     setNewPlaybookOpen(false)
-    notify(`Started “${name}”. Saved in this browser.`)
+    setLibraryOpen(false)
+    notify(`Added “${name}” to your playbooks. Saved in this browser.`)
+  }
+
+  const switchPlaybook = (id: string) => {
+    const target = playbooks.find((item) => item.id === id)
+    if (!target || target.id === playbook.id) {
+      setLibraryOpen(false)
+      return
+    }
+    selectPlaybook(id)
+    // Picked in the same update so the editor never flashes an empty play.
+    setSelectedPlayId(newestPlayId(target))
+    setLibraryOpen(false)
+    notify(`Editing “${target.name}”.`)
   }
 
   const pickImportFile = () => fileInputRef.current?.click()
@@ -259,6 +286,9 @@ function LocalPlaybookApp() {
       <AppHeader
         view={view}
         onView={navigate}
+        playbookName={playbook.name}
+        playbookCount={playbooks.length}
+        onLibrary={() => setLibraryOpen(true)}
         onNewPlay={() => setNewPlayOpen(true)}
         onExportPdf={() => {
           if (!selectedPlay) {
@@ -353,6 +383,40 @@ function LocalPlaybookApp() {
         }}
       />
 
+      <PlaybookLibraryDialog
+        open={libraryOpen}
+        onClose={() => setLibraryOpen(false)}
+        playbooks={playbooks}
+        activeId={playbook.id}
+        syncConnected={cloud.state.phase === 'connected'}
+        onSelect={switchPlaybook}
+        onDuplicate={(id) => {
+          const source = playbooks.find((item) => item.id === id)
+          if (!source || !duplicatePlaybook(id)) return
+          setSelectedPlayId(null)
+          notify(`Duplicated “${source.name}”.`)
+        }}
+        onDelete={(id) => {
+          const source = playbooks.find((item) => item.id === id)
+          deletePlaybook(id)
+          const remaining = usePlaybook.getState()
+          setSelectedPlayId(newestPlayId(selectActivePlaybook(remaining)))
+          notify(`Deleted “${source?.name ?? 'that playbook'}”.`)
+        }}
+        onNew={() => {
+          setLibraryOpen(false)
+          setNewPlaybookOpen(true)
+        }}
+        onImport={() => {
+          setLibraryOpen(false)
+          pickImportFile()
+        }}
+        onSync={() => {
+          setLibraryOpen(false)
+          setSyncOpen(true)
+        }}
+      />
+
       <PbcExportDialog
         open={pbcOpen}
         onClose={() => setPbcOpen(false)}
@@ -371,7 +435,6 @@ function LocalPlaybookApp() {
         open={syncOpen}
         onClose={() => setSyncOpen(false)}
         sync={cloud.state}
-        localPlaybook={playbook}
         onConnect={() => void cloud.connect()}
         onDisconnect={cloud.disconnect}
         onSyncNow={() => void cloud.syncNow()}
@@ -385,27 +448,27 @@ function LocalPlaybookApp() {
       <Modal
         open={Boolean(pendingImport)}
         onClose={() => setPendingImport(null)}
-        title="Replace this playbook?"
-        description="Importing a backup replaces the playbook currently in this browser."
+        title="Import this playbook?"
+        description="It is added to your library as its own playbook. Nothing is replaced."
         footer={
           <div className="flex justify-end gap-2">
             <button className="btn btn-secondary" onClick={() => setPendingImport(null)}>
-              Keep current
+              Cancel
             </button>
             <button
               className="btn btn-primary"
               onClick={() => {
                 if (!pendingImport) return
-                importPlaybook(pendingImport.playbook)
-                setSelectedPlayId(pendingImport.playbook.plays[0]?.id ?? null)
+                addPlaybook(pendingImport.playbook)
+                setSelectedPlayId(null)
                 setView('plays')
                 notify(
-                  `Imported ${pendingImport.playbook.plays.length} plays from ${pendingImport.fileName}.`,
+                  `Added “${pendingImport.playbook.name}” with ${pendingImport.playbook.plays.length} plays.`,
                 )
                 setPendingImport(null)
               }}
             >
-              Import playbook
+              Add to library
             </button>
           </div>
         }

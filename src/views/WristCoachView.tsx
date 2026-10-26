@@ -12,7 +12,7 @@ import {
   Search,
   X,
 } from 'lucide-react'
-import { usePlaybook } from '../store/playbook'
+import { selectActivePlaybook, usePlaybook } from '../store/playbook'
 import { NumberField } from '../components/NumberField'
 import { PlayDiagram } from '../components/PlayDiagram'
 import { buildWristPages, exportWristCoachPdf } from '../lib/pdf/wristCoach'
@@ -30,7 +30,7 @@ const PAGE_PRESETS = [
 ]
 
 export function WristCoachView({ onBack }: { onBack: () => void }) {
-  const playbook = usePlaybook((state) => state.playbook)
+  const playbook = usePlaybook(selectActivePlaybook)
   const wrist = usePlaybook((state) => state.wrist)
   const updateWrist = usePlaybook((state) => state.updateWrist)
   const toggleWristPlay = usePlaybook((state) => state.toggleWristPlay)

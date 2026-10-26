@@ -1,7 +1,15 @@
-import { usePlaybook } from '../store/playbook'
+import { activePlaybook, usePlaybook } from '../store/playbook'
 import type { Playbook } from '../types'
-import { parseSnapbook, serializeSnapbook } from './files'
-import { playbookHash, planCloudSync } from './syncLogic'
+import {
+  applyMergeChoice,
+  baselineHash,
+  libraryHash,
+  mergeLibraries,
+  parseLibrary,
+  serializeLibrary,
+  type LibraryMerge,
+} from './library'
+import { playbookHash } from './syncLogic'
 import {
   DropboxApiError,
   DropboxAuthError,
@@ -28,13 +36,14 @@ const FOCUS_SYNC_INTERVAL = 30_000
 const AUTH_WINDOW = 15 * 60_000
 
 interface StoredConnection {
-  version: 1
+  version: 2
   refreshToken: string
   accountLabel: string
   accountId: string | null
   remoteRev: string | null
   lastSyncedAt: string | null
-  lastSyncedHash: string | null
+  /** Playbook id → content hash at the last successful sync. */
+  baseline: Record<string, string>
 }
 
 interface StoredAccess {
@@ -49,9 +58,14 @@ interface PendingAuth {
   createdAt: number
 }
 
+export interface CloudConflictItem {
+  name: string
+  localPlays: number
+  remotePlays: number
+}
+
 export interface CloudConflict {
-  remoteRev: string
-  remotePlaybook: Playbook
+  items: CloudConflictItem[]
 }
 
 export type CloudSyncPhase =
@@ -86,6 +100,7 @@ let snapshot: CloudSyncState = {
 let connection: StoredConnection | null = null
 let access: StoredAccess | null = null
 let pendingAuth: PendingAuth | null = null
+let pendingMerge: { merge: LibraryMerge; remoteRev: string } | null = null
 let initialized = false
 let ready = false
 let applyingRemote = false
@@ -148,8 +163,16 @@ function removeStored(storage: Storage | null, key: string) {
 function readConnection(): StoredConnection | null {
   const value = readStored<Record<string, unknown>>(localStorageOrNull(), CONNECTION_KEY)
   if (!value || typeof value.refreshToken !== 'string' || !value.refreshToken) return null
+
+  const baseline: Record<string, string> = {}
+  if (value.baseline && typeof value.baseline === 'object' && !Array.isArray(value.baseline)) {
+    for (const [id, hash] of Object.entries(value.baseline as Record<string, unknown>)) {
+      if (typeof hash === 'string') baseline[id] = hash
+    }
+  }
+
   return {
-    version: 1,
+    version: 2,
     refreshToken: value.refreshToken,
     accountLabel:
       typeof value.accountLabel === 'string' && value.accountLabel.trim()
@@ -158,7 +181,7 @@ function readConnection(): StoredConnection | null {
     accountId: typeof value.accountId === 'string' ? value.accountId : null,
     remoteRev: typeof value.remoteRev === 'string' ? value.remoteRev : null,
     lastSyncedAt: typeof value.lastSyncedAt === 'string' ? value.lastSyncedAt : null,
-    lastSyncedHash: typeof value.lastSyncedHash === 'string' ? value.lastSyncedHash : null,
+    baseline,
   }
 }
 
@@ -208,7 +231,7 @@ function nowIso(): string {
 
 function errorMessage(error: unknown): string {
   if (error instanceof Error && error.message.trim()) return error.message
-  return 'Cloud sync failed. Your local playbook is safe.'
+  return 'Cloud sync failed. Your playbooks are safe in this browser.'
 }
 
 function clearOAuthQuery() {
@@ -250,7 +273,7 @@ async function getAccessToken(force = false): Promise<string> {
         error.tag === 'invalid_grant' ||
         error.summary.includes('invalid_grant'))
     ) {
-      throw new DropboxAuthError('Dropbox needs you to reconnect. Your local playbook is safe.')
+      throw new DropboxAuthError('Dropbox needs you to reconnect. Your playbooks are safe.')
     }
     throw error
   }
@@ -281,70 +304,100 @@ async function withDropbox<T>(
 const playKey = (play: Playbook['plays'][number]) =>
   `${play.name}${String.fromCharCode(0)}${play.codeName}`
 
-function applyRemote(playbook: Playbook) {
+/**
+ * Replaces the library with a merged or downloaded one. Play ids are local to
+ * a device and are regenerated when a file is parsed, so the wrist-coach
+ * selection is carried over by play name and code.
+ */
+function applyLibrary(playbooks: Playbook[], activeId?: string) {
   applyingRemote = true
   try {
     const state = usePlaybook.getState()
-    const previousPlaybook = state.playbook
+    const before = activePlaybook(state)
     const previousSelection = state.wrist.selectedPlayIds
-    state.importPlaybook(playbook)
+    state.replaceLibrary(playbooks, activeId)
 
-    if (previousSelection.length) {
-      // Play ids are local, while the file stores plays by name and code. Map
-      // the curated wrist-coach selection onto the freshly parsed plays.
-      const candidates = new Map<string, string[]>()
-      for (const play of playbook.plays) {
-        const key = playKey(play)
-        candidates.set(key, [...(candidates.get(key) ?? []), play.id])
-      }
-      const selected = new Set(previousSelection)
-      const next: string[] = []
-      for (const previous of previousPlaybook.plays) {
-        if (!selected.has(previous.id)) continue
-        const match = candidates.get(playKey(previous))?.shift()
-        if (match) next.push(match)
-      }
-      state.setWristPlays(next)
+    const after = activePlaybook(usePlaybook.getState())
+    if (after.id !== before.id || !previousSelection.length) return
+
+    const candidates = new Map<string, string[]>()
+    for (const play of after.plays) {
+      const key = playKey(play)
+      candidates.set(key, [...(candidates.get(key) ?? []), play.id])
     }
+    const selected = new Set(previousSelection)
+    const next: string[] = []
+    for (const previous of before.plays) {
+      if (!selected.has(previous.id)) continue
+      const match = candidates.get(playKey(previous))?.shift()
+      if (match) next.push(match)
+    }
+    if (next.length) state.setWristPlays(next)
   } finally {
     applyingRemote = false
   }
 }
 
-async function readRemote(): Promise<{ rev: string; playbook: Playbook } | null> {
+async function readRemoteLibrary(): Promise<{
+  rev: string
+  playbooks: Playbook[]
+  legacy: boolean
+} | null> {
   const metadata = await withDropbox((client) => client.getMetadata())
   if (!metadata) return null
   const text = await withDropbox((client) => client.download())
-  let playbook: Playbook
   try {
-    playbook = parseSnapbook(text)
+    const parsed = parseLibrary(text)
+    return { rev: metadata.rev, playbooks: parsed.playbooks, legacy: parsed.legacy }
   } catch (error) {
     throw new Error(
       `The Dropbox copy could not be read${error instanceof Error ? `: ${error.message}` : '.'}`,
     )
   }
-  return { rev: metadata.rev, playbook }
 }
 
-function setConflict(remote: { rev: string; playbook: Playbook }) {
+function recordSynced(playbooks: Playbook[], remoteRev: string) {
+  if (!connection) return
+  const baseline = Object.fromEntries(
+    playbooks.map((playbook) => [playbook.id, playbookHash(playbook)]),
+  )
+  const syncedAt = nowIso()
+  updateConnection({ remoteRev, lastSyncedAt: syncedAt, baseline })
+  setState({ phase: 'connected', lastSyncedAt: syncedAt, error: null, conflict: null })
+}
+
+function enterConflict(merge: LibraryMerge, remoteRev: string) {
+  pendingMerge = { merge, remoteRev }
   setState({
     phase: 'conflict',
-    conflict: { remoteRev: remote.rev, remotePlaybook: remote.playbook },
+    conflict: {
+      items: merge.conflicts.map((conflict) => ({
+        name: conflict.local.name,
+        localPlays: conflict.local.plays.length,
+        remotePlays: conflict.remote.plays.length,
+      })),
+    },
     error: null,
   })
 }
 
-async function uploadLocal(rev: string | null): Promise<void> {
-  const local = usePlaybook.getState().playbook
-  const text = serializeSnapbook(local)
+async function uploadLibrary(playbooks: Playbook[], rev: string | null): Promise<void> {
+  const text = serializeLibrary(playbooks)
   let metadata: DropboxFileMetadata
   try {
     metadata = await withDropbox((client) => client.upload(text, { rev }))
   } catch (error) {
     if (error instanceof DropboxConflictError) {
-      const remote = await readRemote()
+      const remote = await readRemoteLibrary()
       if (remote) {
-        setConflict(remote)
+        enterConflict(
+          mergeLibraries({
+            local: playbooks,
+            remote: remote.playbooks,
+            baseline: connection?.baseline ?? {},
+          }),
+          remote.rev,
+        )
         return
       }
       metadata = await withDropbox((client) => client.upload(text, { rev: null }))
@@ -352,35 +405,7 @@ async function uploadLocal(rev: string | null): Promise<void> {
       throw error
     }
   }
-  if (!connection) return
-  const syncedAt = nowIso()
-  updateConnection({
-    remoteRev: metadata.rev,
-    lastSyncedAt: syncedAt,
-    lastSyncedHash: playbookHash(local),
-  })
-  setState({ phase: 'connected', lastSyncedAt: syncedAt, error: null, conflict: null })
-}
-
-async function downloadRemote(expectedLocalHash: string): Promise<void> {
-  const remote = await readRemote()
-  if (!connection) return
-  if (!remote) {
-    await uploadLocal(null)
-    return
-  }
-  if (playbookHash(usePlaybook.getState().playbook) !== expectedLocalHash) {
-    setConflict(remote)
-    return
-  }
-  applyRemote(remote.playbook)
-  const syncedAt = nowIso()
-  updateConnection({
-    remoteRev: remote.rev,
-    lastSyncedAt: syncedAt,
-    lastSyncedHash: playbookHash(remote.playbook),
-  })
-  setState({ phase: 'connected', lastSyncedAt: syncedAt, error: null, conflict: null })
+  recordSynced(playbooks, metadata.rev)
 }
 
 async function runSync(): Promise<void> {
@@ -392,19 +417,19 @@ async function runSync(): Promise<void> {
 
   setState({ phase: 'syncing', error: null })
   try {
-    const local = usePlaybook.getState().playbook
-    const localHash = playbookHash(local)
+    const local = usePlaybook.getState().playbooks
     const metadata = await withDropbox((client) => client.getMetadata())
     if (!connection) return
-    const plan = planCloudSync({
-      remoteExists: Boolean(metadata),
-      remoteRev: metadata?.rev ?? null,
-      localHash,
-      syncedRev: connection.remoteRev,
-      syncedHash: connection.lastSyncedHash,
-    })
 
-    if (plan === 'up-to-date') {
+    if (!metadata) {
+      await uploadLibrary(local, null)
+      return
+    }
+
+    const unchangedLocally =
+      libraryHash(local) === baselineHash(connection.baseline) &&
+      metadata.rev === connection.remoteRev
+    if (unchangedLocally) {
       setState({
         phase: 'connected',
         lastSyncedAt: connection.lastSyncedAt,
@@ -413,37 +438,56 @@ async function runSync(): Promise<void> {
       })
       return
     }
-    if (plan === 'upload') {
-      await uploadLocal(metadata?.rev ?? null)
-      return
-    }
-    if (plan === 'download') {
-      await downloadRemote(localHash)
+
+    const remote = await readRemoteLibrary()
+    if (!remote) {
+      await uploadLibrary(local, null)
       return
     }
 
-    const remote = await readRemote()
-    if (!remote) {
-      await uploadLocal(null)
+    let remotePlaybooks = remote.playbooks
+    if (remote.legacy && local.length === 1) {
+      // The file predates the library: it is this browser's one playbook.
+      remotePlaybooks = [{ ...remote.playbooks[0], id: local[0].id }]
+    }
+
+    const merge = mergeLibraries({
+      local,
+      remote: remotePlaybooks,
+      baseline: connection.baseline,
+    })
+    if (merge.conflicts.length) {
+      enterConflict(merge, remote.rev)
       return
     }
-    if (playbookHash(remote.playbook) === localHash) {
-      const syncedAt = nowIso()
-      updateConnection({
-        remoteRev: remote.rev,
-        lastSyncedAt: syncedAt,
-        lastSyncedHash: localHash,
-      })
-      setState({ phase: 'connected', lastSyncedAt: syncedAt, error: null, conflict: null })
+
+    const merged = merge.playbooks
+    const mergedHash = libraryHash(merged)
+
+    if (mergedHash !== libraryHash(local)) {
+      applyLibrary(merged)
+    }
+
+    if (mergedHash === libraryHash(remotePlaybooks)) {
+      // Dropbox already holds this exact library; only the baseline is new.
+      recordSynced(merged, remote.rev)
       return
     }
-    setConflict(remote)
+
+    await uploadLibrary(merged, remote.rev)
   } catch (error) {
     if (error instanceof DropboxConflictError) {
       try {
-        const remote = await readRemote()
+        const remote = await readRemoteLibrary()
         if (remote) {
-          setConflict(remote)
+          enterConflict(
+            mergeLibraries({
+              local: usePlaybook.getState().playbooks,
+              remote: remote.playbooks,
+              baseline: connection?.baseline ?? {},
+            }),
+            remote.rev,
+          )
           return
         }
       } catch {
@@ -454,7 +498,7 @@ async function runSync(): Promise<void> {
       clearAccess()
       setState({
         phase: 'error',
-        error: 'Dropbox needs you to reconnect. Your local playbook is safe.',
+        error: 'Dropbox needs you to reconnect. Your playbooks are safe.',
       })
       return
     }
@@ -480,7 +524,7 @@ function scheduleAutoSync() {
       if (
         connection &&
         snapshot.phase === 'connected' &&
-        playbookHash(usePlaybook.getState().playbook) !== connection.lastSyncedHash
+        libraryHash(usePlaybook.getState().playbooks) !== baselineHash(connection.baseline)
       ) {
         scheduleAutoSync()
       }
@@ -493,7 +537,7 @@ function subscribeToStore() {
   storeSubscribed = true
   usePlaybook.subscribe((state, previous) => {
     if (!ready || applyingRemote || !connection) return
-    if (state.playbook !== previous.playbook) scheduleAutoSync()
+    if (state.playbooks !== previous.playbooks) scheduleAutoSync()
   })
 }
 
@@ -566,13 +610,13 @@ async function completeAuth(
       previous && (!accountId || !previous.accountId || accountId === previous.accountId),
     )
     saveConnection({
-      version: 1,
+      version: 2,
       refreshToken: token.refreshToken ?? previous?.refreshToken ?? '',
       accountLabel: account?.displayName ?? previous?.accountLabel ?? 'Dropbox',
       accountId,
       remoteRev: sameAccount ? (previous?.remoteRev ?? null) : null,
       lastSyncedAt: sameAccount ? (previous?.lastSyncedAt ?? null) : null,
-      lastSyncedHash: sameAccount ? (previous?.lastSyncedHash ?? null) : null,
+      baseline: sameAccount ? (previous?.baseline ?? {}) : {},
     })
     setState({
       phase: 'syncing',
@@ -693,6 +737,7 @@ export function disconnectDropbox() {
     clearTimeout(autoTimer)
     autoTimer = null
   }
+  pendingMerge = null
   saveConnection(null)
   clearAccess()
   savePendingAuth(null)
@@ -706,41 +751,29 @@ export function disconnectDropbox() {
 }
 
 export async function resolveCloudConflict(choice: 'local' | 'remote'): Promise<void> {
-  const conflict = snapshot.conflict
-  if (!conflict || !connection) return
+  const pending = pendingMerge
+  if (!pending || !connection) return
   if (syncInFlight) await syncInFlight
 
   setState({ phase: 'syncing', error: null })
   try {
-    if (choice === 'remote') {
-      applyRemote(conflict.remotePlaybook)
-      const syncedAt = nowIso()
-      updateConnection({
-        remoteRev: conflict.remoteRev,
-        lastSyncedAt: syncedAt,
-        lastSyncedHash: playbookHash(conflict.remotePlaybook),
-      })
-      setState({ phase: 'connected', lastSyncedAt: syncedAt, error: null, conflict: null })
-      return
-    }
-
-    const local = usePlaybook.getState().playbook
-    const metadata = await withDropbox((client) =>
-      client.upload(serializeSnapbook(local), { rev: conflict.remoteRev }),
-    )
-    const syncedAt = nowIso()
-    updateConnection({
-      remoteRev: metadata.rev,
-      lastSyncedAt: syncedAt,
-      lastSyncedHash: playbookHash(local),
-    })
-    setState({ phase: 'connected', lastSyncedAt: syncedAt, error: null, conflict: null })
+    const resolved = applyMergeChoice(pending.merge, choice)
+    pendingMerge = null
+    applyLibrary(resolved)
+    await uploadLibrary(resolved, pending.remoteRev)
   } catch (error) {
     if (error instanceof DropboxConflictError) {
       try {
-        const remote = await readRemote()
+        const remote = await readRemoteLibrary()
         if (remote) {
-          setConflict(remote)
+          enterConflict(
+            mergeLibraries({
+              local: usePlaybook.getState().playbooks,
+              remote: remote.playbooks,
+              baseline: connection?.baseline ?? {},
+            }),
+            remote.rev,
+          )
           return
         }
       } catch {

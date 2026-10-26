@@ -9,6 +9,7 @@ import {
   FileJson,
   GitFork,
   Grid2X2,
+  Library,
   PenTool,
   Plus,
   Printer,
@@ -26,6 +27,9 @@ export type View = 'plays' | 'design' | 'wrist' | 'tree' | 'team'
 interface AppHeaderProps {
   view: View
   onView: (view: View) => void
+  playbookName: string
+  playbookCount: number
+  onLibrary: () => void
   onNewPlay: () => void
   onExportPdf: () => void
   onExportRouteTree: () => void
@@ -48,6 +52,9 @@ const navItems: Array<{ id: View; label: string; icon: typeof Grid2X2 }> = [
 export function AppHeader({
   view,
   onView,
+  playbookName,
+  playbookCount,
+  onLibrary,
   onNewPlay,
   onExportPdf,
   onExportRouteTree,
@@ -103,6 +110,25 @@ export function AppHeader({
           aria-label="Go to playbook"
         >
           <Logo />
+        </button>
+
+        <button
+          className="btn btn-secondary !px-2 min-[380px]:!px-3"
+          onClick={onLibrary}
+          aria-label="Switch playbook"
+          aria-haspopup="dialog"
+          title={
+            playbookCount === 1
+              ? 'Your playbooks — one saved in this browser'
+              : `Your playbooks — ${playbookCount} saved in this browser`
+          }
+        >
+          <Library size={15} />
+          <span className="hidden max-w-[10rem] truncate lg:inline">{playbookName}</span>
+          <span className="chip !border-line !bg-ink-850 !px-1.5 !text-[0.6rem] !text-slate-moss">
+            {playbookCount}
+          </span>
+          <ChevronDown size={14} className="hidden min-[380px]:block" />
         </button>
 
         <nav

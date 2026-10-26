@@ -556,3 +556,38 @@ header and receive no `minReaderVersion` guarantees.
 
 Playbook Creator `.pbc` files, PDF exports and browser `localStorage` state are
 different formats and are not covered by this specification.
+
+## Library container
+
+The cloud sync file, `snapbook.json` inside the app folder, is not a single
+playbook. It is a small container that keeps one ordinary `snapbook` document
+per playbook, so each entry stays readable on its own:
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `format` | string | yes | Always `snapbook.library`. |
+| `version` | number | yes | Container revision. Currently `1`. |
+| `exportedAt` | string | yes | ISO-8601 timestamp. Informational; the reader does not use it. |
+| `playbooks` | array | yes | One entry per playbook. |
+
+Each entry is an object with exactly two meaningful members: `id`, a non-empty
+string, and `file`, a complete document in the format described above. The `id`
+is the stable identity of that playbook on the device that wrote the entry, and
+it is what lets a sync recognize the same playbook on two devices; it is
+deliberately separate from the `snapbook` document so the document keeps its
+rule that local object ids are never written. Entries are written in the
+library's own order, and each `file` follows the same determinism rule as a
+standalone document.
+
+A reader of the container:
+
+1. MUST require `format: "snapbook.library"` and an array of entries.
+2. MUST reject a container that lists the same `id` more than once, and one
+   whose entry is missing an `id`.
+3. MUST reject the whole container when an entry is not a valid `snapbook`
+   document, so a damaged file never half-replaces a library.
+4. SHOULD accept a bare `snapbook` document as a one-entry library, which is
+   what a sync file written before the container existed contains.
+
+Like the document format, the container is not frozen: `version` is bumped for
+any change to its shape.

@@ -15,7 +15,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react'
-import { usePlaybook } from '../store/playbook'
+import { selectActivePlaybook, usePlaybook } from '../store/playbook'
 import { PlayDiagram } from '../components/PlayDiagram'
 import { LogoBadge } from '../components/Logo'
 import { Modal } from '../components/Modal'
@@ -37,7 +37,7 @@ export function PlaysView({
   onNewPlaybook,
   onConfigure,
 }: PlaysViewProps) {
-  const playbook = usePlaybook((state) => state.playbook)
+  const playbook = usePlaybook(selectActivePlaybook)
   const duplicatePlay = usePlaybook((state) => state.duplicatePlay)
   const deletePlay = usePlaybook((state) => state.deletePlay)
 

@@ -10,13 +10,13 @@ import {
   type RosterGroup,
   type RosterGroupPatch,
 } from '../lib/roster'
-import { usePlaybook } from '../store/playbook'
+import { selectActivePlaybook, usePlaybook } from '../store/playbook'
 
 const plural = (count: number, word: string) =>
   `${count} ${word}${count === 1 ? '' : 's'}`
 
 export function TeamView() {
-  const playbook = usePlaybook((state) => state.playbook)
+  const playbook = usePlaybook(selectActivePlaybook)
   const setPlaybookName = usePlaybook((state) => state.setPlaybookName)
   const setTeamName = usePlaybook((state) => state.setTeamName)
   const updateRosterGroup = usePlaybook((state) => state.updateRosterGroup)

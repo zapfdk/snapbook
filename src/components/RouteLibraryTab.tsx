@@ -3,7 +3,7 @@ import { ArrowUpRight, Pencil, Plus, Search, Trash2, X } from 'lucide-react'
 import { Modal } from './Modal'
 import { RoutePreview } from './RoutePreview'
 import { RouteLibraryEditor } from './RouteLibraryEditor'
-import { usePlaybook } from '../store/playbook'
+import { selectActivePlaybook, usePlaybook } from '../store/playbook'
 import {
   ROUTE_GROUPS,
   ROUTE_GROUP_COLORS,
@@ -21,7 +21,7 @@ interface EditorState {
 }
 
 export function RouteLibraryTab() {
-  const playbook = usePlaybook((state) => state.playbook)
+  const playbook = usePlaybook(selectActivePlaybook)
   const addRoute = usePlaybook((state) => state.addRoute)
   const updateRoute = usePlaybook((state) => state.updateRoute)
   const deleteRoute = usePlaybook((state) => state.deleteRoute)

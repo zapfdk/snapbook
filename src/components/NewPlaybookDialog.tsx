@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ArrowRight, Download, Layers3, TriangleAlert, Upload } from 'lucide-react'
+import { ArrowRight, Download, Layers3, Upload } from 'lucide-react'
 import { Modal } from './Modal'
 
 interface NewPlaybookDialogProps {
@@ -42,7 +42,7 @@ export function NewPlaybookDialog({
       open={open}
       onClose={onClose}
       title="New playbook"
-      description="Start with a clean sheet. Nothing is replaced until you create it."
+      description="Start with a clean sheet. It joins your playbooks, so the one you have open is left as it is."
       footer={
         <div className="flex flex-wrap items-center justify-between gap-3">
           <button className="btn btn-ghost !px-0" onClick={onImport}>
@@ -109,20 +109,20 @@ export function NewPlaybookDialog({
           </div>
         </div>
 
-        <div className="rounded-lg border border-coral/25 bg-coral/[0.07] px-3 py-2 text-[0.7rem] leading-relaxed text-coral">
+        <div className="rounded-lg border border-line bg-ink-900/60 px-3 py-2.5 text-[0.7rem] leading-relaxed text-fog">
           <p className="flex items-start gap-2">
-            <TriangleAlert size={14} className="mt-0.5 shrink-0" />
+            <Layers3 size={14} className="mt-0.5 shrink-0 text-lime" />
             <span>
-              This replaces the playbook currently open in this browser. Back it up first if you
-              want to keep it.
+              It is stored beside your other playbooks, and a connected Dropbox syncs
+              the whole set. Switch between them from the playbook button in the header.
             </span>
           </p>
           <button
-            className="mt-2 inline-flex items-center gap-1 font-semibold underline decoration-coral/40 underline-offset-2 hover:text-chalk"
+            className="mt-2 inline-flex items-center gap-1 font-semibold text-fog underline decoration-line underline-offset-2 hover:text-chalk"
             onClick={onBackup}
           >
             <Download size={12} />
-            Download current backup
+            Download a backup of the open playbook
           </button>
         </div>
 

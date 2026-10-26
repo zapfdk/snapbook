@@ -18,7 +18,7 @@ import {
   Undo2,
   X,
 } from 'lucide-react'
-import { usePlaybook } from '../store/playbook'
+import { selectActivePlaybook, usePlaybook } from '../store/playbook'
 import { PLAYER_COLORS } from '../data/defaults'
 import { FieldCanvas } from '../components/FieldCanvas'
 import { RouteGlyph } from '../components/RouteGlyph'
@@ -57,7 +57,7 @@ export function DesignView({ play, onBack }: DesignViewProps) {
   const createFormationFromPlay = usePlaybook((state) => state.createFormationFromPlay)
   const addCategory = usePlaybook((state) => state.addCategory)
   const togglePlayCategory = usePlaybook((state) => state.togglePlayCategory)
-  const playbook = usePlaybook((state) => state.playbook)
+  const playbook = usePlaybook(selectActivePlaybook)
 
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [tool, setTool] = useState<'move' | 'route' | 'sketch'>('move')

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { ArrowLeftRight, ChevronDown, FileDown, Printer } from 'lucide-react'
-import { usePlaybook } from '../store/playbook'
+import { selectActivePlaybook, usePlaybook } from '../store/playbook'
 import { NumberField } from '../components/NumberField'
 import { RouteTreePage } from '../components/RouteTreePage'
 import { exportRouteTreePdf } from '../lib/pdf/routeTree'
@@ -9,7 +9,7 @@ import { cx } from '../lib/files'
 import type { RouteTreeSettings } from '../types'
 
 export function RouteTreeView() {
-  const playbook = usePlaybook((state) => state.playbook)
+  const playbook = usePlaybook(selectActivePlaybook)
   const settings = usePlaybook((state) => state.routeTree)
   const updateRouteTree = usePlaybook((state) => state.updateRouteTree)
   const [exporting, setExporting] = useState(false)

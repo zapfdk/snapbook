@@ -20,8 +20,11 @@ npm run build   # typecheck and production build
 
 ## What it does
 
-- **Playbook** — start a blank playbook, browse plays in a visual grid with
-  quick previews, search and filter them, and open any play in the designer.
+- **Playbooks** — keep several playbooks side by side and pick the one you are
+  editing from the header button, which also duplicates or deletes them. Each
+  playbook has its own plays, formations, routes, tags and roster. Browse plays
+  in a visual grid with quick previews, search and filter them, and open any
+  play in the designer.
 - **Team** — set the playbook and squad name, plus each player's name, marker
   label, number and colour once for every formation and play.
 - **Route library** — start with 18 coaching presets, then add, edit and
@@ -43,18 +46,25 @@ npm run build   # typecheck and production build
 - **Share** — generate a read-only link that carries the whole playbook in the
   URL, with no upload and no account. Recipients can merge it into their own
   playbook or use it as an editable copy.
-- **Cloud sync** — optionally keep the playbook in a Dropbox app folder, with
-  automatic uploads, downloads and a conflict dialog when both copies changed.
+- **Cloud sync** — optionally keep every playbook in a Dropbox app folder,
+  with automatic uploads, downloads, merging of playbooks that only one side
+  changed, and a conflict dialog when the same playbook changed in both places.
 - **Backup** — export a readable `.snapbook.json` file, import one back
   (including older backups), or export a password-protected `.pbc` file for
   Playbook Creator.
 
 ## Saving and opening
 
-Every change is written to this browser's `localStorage` automatically, so the
-playbook, wrist-coach settings and route-tree options are restored when you
-come back. The **Saved locally** badge in the playbook header confirms this.
-Nothing leaves the browser unless you connect cloud sync below.
+Every change is written to this browser's `localStorage` automatically, so your
+whole library of playbooks, the wrist-coach settings and the route-tree options
+are restored when you come back. The **Saved locally** badge in the playbook
+header confirms this. Nothing leaves the browser unless you connect cloud sync
+below.
+
+The playbook button at the left of the header lists everything in the library
+and switches which one you are editing. **New playbook** adds an entry instead
+of replacing the open one, **Duplicate** copies a playbook with fresh ids, and
+deleting asks first — at least one playbook always stays.
 
 ## Offline and updates
 
@@ -83,10 +93,10 @@ support.
 
 ## Cloud sync
 
-**Sync** in the header can keep one playbook in step through Dropbox. Snapbook
+**Sync** in the header keeps your playbooks in step through Dropbox. Snapbook
 uses an **App folder** app, so it can only see a single file it creates,
-`snapbook.json`, under `Apps → <your app name>`. It cannot browse the rest of
-your Dropbox. There is no server in the middle: the browser signs in with OAuth
+`snapbook.json`, under `Apps → <your app name>`, which holds every playbook in
+the library. It cannot browse the rest of your Dropbox. There is no server in the middle: the browser signs in with OAuth
 PKCE and talks to Dropbox directly.
 
 Google Drive, OneDrive and iCloud are not supported yet.
@@ -122,14 +132,18 @@ identifier; the app has no client secret in the repository or in the browser.
 
 - Edits are uploaded automatically about 1.5 seconds after they settle, and
   Dropbox is checked when the window regains focus.
-- Changes from another device are downloaded only when this browser has no
-  unsynced edits.
-- If both sides changed, sync stops and shows a conflict with play counts for
-  each copy. Choose **Keep this browser’s copy** to overwrite Dropbox, or
-  **Use the Dropbox copy** to replace this browser. Download a backup first if
-  unsure.
-- The whole playbook syncs: plays, formations, routes, tags, roster and team
-  names. Wrist-coach and route-tree settings stay on each device.
+- Every playbook is compared on its own. One that only this browser changed is
+  uploaded, one that only Dropbox changed is downloaded, and one that only
+  exists on the other side is added here — so two devices can edit different
+  playbooks at the same time without colliding.
+- Only a playbook changed in *both* places stops the sync. The conflict dialog
+  lists those playbooks with their play counts; choose **Keep this browser’s
+  copies** to overwrite Dropbox, or **Use the Dropbox copies** to take the
+  other side. Download a backup first if unsure.
+- Adding or deleting a playbook travels too: a new entry appears on the other
+  device, and a deleted one goes from Dropbox on the next sync.
+- Everything inside a playbook syncs: plays, formations, routes, tags, roster
+  and team names. Wrist-coach and route-tree settings stay on each device.
 - The Dropbox refresh token is kept in this browser’s `localStorage` so the
   connection survives a reload. **Disconnect** removes the tokens from this
   browser; revoke the app from Dropbox if you want to remove the grant too.
@@ -159,10 +173,11 @@ is best-effort: clear the route or refine it with the normal route tools
 whenever the snap is not what you meant.
 
 **New playbook** starts a blank playbook with the six starter formations, the
-standard route library and standard tags. It replaces the playbook currently open in the browser, so the
-dialog offers **Download current backup** before you create it. **Import a
-playbook** (from the Export menu or the new-playbook dialog) also replaces the
-current playbook with the imported file.
+standard route library and standard tags. It joins your library and the
+playbook you have open is left untouched; the dialog still offers a backup
+download. **Import a playbook** (from the Export menu, the library dialog or
+the new-playbook dialog) adds the file as its own library entry the same way,
+as does **Edit a copy** on a shared link.
 
 ## Team setup
 
