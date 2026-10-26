@@ -23,9 +23,43 @@ export const clampPlayerPoint = (point: Point): Point => ({
   y: clamp(point.y, -7.1, 16.4),
 })
 
+/** Field edges, inset so a route point's handle stays fully drawn. */
+export const ROUTE_FIELD_BOUNDS = {
+  minX: -12.4,
+  maxX: 12.4,
+  minY: -7.4,
+  maxY: 17.4,
+} as const
+
+/** Clamps a route point for a player aligned at the field origin. */
 export const clampRoutePoint = (point: Point): Point => ({
-  x: clamp(point.x, -12.4, 12.4),
-  y: clamp(point.y, -7.4, 17.4),
+  x: clamp(point.x, ROUTE_FIELD_BOUNDS.minX, ROUTE_FIELD_BOUNDS.maxX),
+  y: clamp(point.y, ROUTE_FIELD_BOUNDS.minY, ROUTE_FIELD_BOUNDS.maxY),
+})
+
+/**
+ * Keeps a route point on the field. Route points are offsets from the player's
+ * alignment, so the field edges only mean something once that position is added
+ * back: a receiver aligned near a sideline could otherwise drag a route point
+ * off the field, where it is clipped and cannot be grabbed again.
+ */
+export const clampRoutePointForPlayer = <T extends Point>(
+  playerPos: Point,
+  point: T,
+): T => ({
+  ...point,
+  x: Number(
+    (
+      clamp(playerPos.x + point.x, ROUTE_FIELD_BOUNDS.minX, ROUTE_FIELD_BOUNDS.maxX) -
+      playerPos.x
+    ).toFixed(2),
+  ),
+  y: Number(
+    (
+      clamp(playerPos.y + point.y, ROUTE_FIELD_BOUNDS.minY, ROUTE_FIELD_BOUNDS.maxY) -
+      playerPos.y
+    ).toFixed(2),
+  ),
 })
 
 export const snap = (value: number, step: number) => Math.round(value / step) * step
@@ -114,8 +148,20 @@ export interface RouteShape {
   arrow: string
 }
 
+/**
+ * The points a route is drawn with. A route can legitimately point past the
+ * field edge: flipping one mirrors it over the far edge, and a library route
+ * can be applied to any alignment. Drawing pulls those points back so the
+ * route, its arrow and its handles always stay on the field, while the stored
+ * points keep their real shape, so flipping a route back restores exactly what
+ * it was.
+ */
+export const fieldRoutePoints = (playerPos: Point, points: RoutePoint[]): RoutePoint[] =>
+  points.map((point) => clampRoutePointForPlayer(playerPos, point))
+
 export function routeShape(player: Player, route: Route): RouteShape | null {
   if (!route.points.length) return null
+  const points = fieldRoutePoints(player.pos, route.points)
   const startField = player.pos
   const start = toSvg(startField)
   let previousField = startField
@@ -123,7 +169,7 @@ export function routeShape(player: Player, route: Route): RouteShape | null {
   let tangent = { x: 0, y: -1 }
   let end = start
 
-  for (const point of route.points) {
+  for (const point of points) {
     const absolute = absolutePoint(player, point)
     end = toSvg(absolute)
     const controlField = segmentControl(previousField, absolute, point.curve)

@@ -2,7 +2,7 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_PLAYBOOK } from '../../data/defaults'
 import { clonePlaybook } from '../../lib/library'
 import { DEFAULT_ROUTE_TREE_SETTINGS } from '../../lib/routeTree'
-import type { Playbook, WristCoachSettings } from '../../types'
+import type { Playbook, Point, RoutePoint, WristCoachSettings } from '../../types'
 
 const storage = (): Storage => {
   const values = new Map<string, string>()
@@ -214,5 +214,82 @@ describe('stored state migration', () => {
 
   it('passes an empty state through untouched', () => {
     expect(store.migrateStoredState(undefined)).toEqual({})
+  })
+})
+
+describe('routes written into a play', () => {
+  const boundary = (pos: Point, points: RoutePoint[] | null): Playbook => ({
+    ...book('boundary', 'Boundary'),
+    plays: [
+      {
+        id: 'boundary-play',
+        name: 'Boundary',
+        codeName: '',
+        formationId: 'none',
+        players: [
+          {
+            id: 'wr',
+            role: 'Wide Receiver Left',
+            label: 'WR-L',
+            number: 11,
+            color: '#FF8265',
+            pos,
+            route: points ? { id: 'route', points } : null,
+          },
+        ],
+        categories: [],
+        notes: '',
+        createdAt: '2026-10-01T00:00:00.000Z',
+        updatedAt: '2026-10-01T00:00:00.000Z',
+      },
+    ],
+  })
+
+  let store: typeof import('../playbook')
+
+  beforeAll(async () => {
+    vi.stubGlobal('localStorage', storage())
+    vi.stubGlobal('sessionStorage', storage())
+    store = await import('../playbook')
+  })
+
+  const install = (playbook: Playbook) => {
+    store.usePlaybook.setState({ playbooks: [playbook], activeId: playbook.id })
+  }
+
+  const points = () =>
+    store.usePlaybook.getState().playbooks[0].plays[0].players[0].route?.points
+
+  it('mirrors a route and restores it exactly when flipped back', () => {
+    // The receiver is aligned at the left edge, so the mirror points off the
+    // field. The stored route keeps its real shape and flipping back is a
+    // plain mirror of it, so nothing the coach drew is lost.
+    const original = [{ x: 0, y: 3 }, { x: 2, y: 6, curve: 1.2 }]
+    install(boundary({ x: -11, y: 0 }, original.map((point) => ({ ...point }))))
+
+    store.usePlaybook.getState().flipPlayerRoute('boundary-play', 'wr')
+    expect(points()).toEqual([{ x: 0, y: 3 }, { x: -2, y: 6, curve: -1.2 }])
+
+    store.usePlaybook.getState().flipPlayerRoute('boundary-play', 'wr')
+    expect(points()).toEqual(original)
+  })
+
+  it('keeps a library route exactly as the library holds it', () => {
+    install(boundary({ x: -11, y: 0 }, null))
+
+    store.usePlaybook.getState().applyRoutePreset('boundary-play', 'wr', 'out')
+
+    expect(points()).toEqual([{ x: 0, y: 8 }, { x: -6, y: 8, curve: -0.6 }])
+  })
+
+  it('clamps a hand-written route and keeps its bows', () => {
+    install(boundary({ x: -11, y: 0 }, null))
+
+    store.usePlaybook.getState().setPlayerRoute('boundary-play', 'wr', [
+      { x: -30, y: 0 },
+      { x: 5, y: 40, curve: 1.5 },
+    ])
+
+    expect(points()).toEqual([{ x: -1.4, y: 0 }, { x: 5, y: 17.4, curve: 1.5 }])
   })
 })

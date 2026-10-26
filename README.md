@@ -35,7 +35,12 @@ npm run build   # typecheck and production build
   re-aligns the plays already built from it while leaving their routes intact.
 - **Designer** — drag five players, apply library routes, draw custom
   route points, adjust labels/numbers/colours, tag plays, and save alignments as
-  reusable formations. The experimental **Sketch** mode turns a hand-drawn
+  reusable formations. A route point you place stays on the field: dragging one
+  past an edge stops it at the edge, so it can always be grabbed and reshaped
+  again. Flipping a route mirrors it and a library route keeps the library's own
+  shape; both are drawn inside the field edges while the play keeps their real
+  coordinates, so flipping a route back — or re-applying the preset — returns
+  exactly what it was. The experimental **Sketch** mode turns a hand-drawn
   stroke into the closest library route, or a freehand route when nothing fits.
 - **Wrist coach** — choose the card order, paper insert size, grid, margins and
   ink options, then export a vector PDF at the exact insert dimensions.

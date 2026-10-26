@@ -6,7 +6,7 @@ import { applyRosterGroupPatch, type RosterGroupPatch } from '../lib/roster'
 import { applyFormationUpdate, cloneFormation } from '../lib/formations'
 import { clonePlaybook, uniquePlaybookName } from '../lib/library'
 import { DEFAULT_ROUTE_TREE_SETTINGS } from '../lib/routeTree'
-import { flipRoutePoints } from '../lib/geometry'
+import { clampRoutePointForPlayer, flipRoutePoints } from '../lib/geometry'
 import {
   type Category,
   type Formation,
@@ -46,6 +46,19 @@ const routeFromPreset = (routes: LibraryRoute[], presetId: string, player: Playe
     })),
   }
 }
+
+/**
+ * Route points are offsets from the player's alignment, so the field edges only
+ * mean something with that alignment in hand. Points the coach places by hand
+ * are pulled back here, so the play never records a point that cannot be seen
+ * or grabbed.
+ *
+ * Flipping and library routes are deliberately left alone: they keep their real
+ * shape (`fieldRoutePoints` limits them while drawing), so flipping a route
+ * back — or re-applying a library route — returns exactly what it was.
+ */
+const clampRouteToField = (player: Player, points: RoutePoint[]): RoutePoint[] =>
+  points.map((point) => clampRoutePointForPlayer(player.pos, point))
 
 const defaultWrist: WristCoachSettings = {
   selectedPlayIds: DEFAULT_PLAYBOOK.plays.map((play) => play.id),
@@ -450,8 +463,7 @@ export const usePlaybook = create<PlaybookState>()(
                 ...play,
                 players: play.players.map((player) => {
                   if (player.id !== playerId) return player
-                  const route = routeFromPreset(pb.routes, presetId, player)
-                  return { ...player, route }
+                  return { ...player, route: routeFromPreset(pb.routes, presetId, player) }
                 }),
                 updatedAt: now(),
               })),
@@ -468,7 +480,10 @@ export const usePlaybook = create<PlaybookState>()(
                     ? {
                         ...player,
                         route: points.length
-                          ? { id: player.route?.id ?? createId(), points }
+                          ? {
+                              id: player.route?.id ?? createId(),
+                              points: clampRouteToField(player, points),
+                            }
                           : null,
                       }
                     : player,

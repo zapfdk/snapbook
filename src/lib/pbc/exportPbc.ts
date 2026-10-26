@@ -1,6 +1,6 @@
 import type { Category, Play, Playbook, Player, RoutePoint } from '../../types'
 import { BoostTextArchive } from './boostWriter'
-import { segmentControl } from '../geometry'
+import { fieldRoutePoints, segmentControl } from '../geometry'
 
 export const PBC_VERSION = '0.22.0'
 const BOOST_LIBRARY_VERSION = 19
@@ -104,7 +104,10 @@ const toExPlayer = (player: Player, withRoute: boolean): ExPlayer => ({
     x: clamp(player.pos.x, -12, 12),
     y: clamp(player.pos.y, -7, 17),
   },
-  route: withRoute && player.route ? routeToPbc(player, player.route.points) : null,
+  route:
+    withRoute && player.route
+      ? routeToPbc(player, fieldRoutePoints(player.pos, player.route.points))
+      : null,
   number: player.number && player.number > 0 ? Math.min(99, Math.round(player.number)) : 0,
 })
 

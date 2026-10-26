@@ -1,11 +1,17 @@
 import { describe, expect, it } from 'vitest'
+import type { Player } from '../../types'
 import {
+  clampRoutePoint,
+  clampRoutePointForPlayer,
   curveFromOffset,
+  fieldRoutePoints,
   flipRoutePoints,
   routeLength,
+  routeShape,
   segmentBowPoint,
   segmentControl,
   segmentOffset,
+  toSvg,
   withCurve,
 } from '../geometry'
 
@@ -85,6 +91,76 @@ describe('segment bows', () => {
         5,
       )
     }
+  })
+})
+
+describe('route point bounds', () => {
+  it('keeps a point on the field for a player aligned anywhere', () => {
+    // A receiver on the left sideline cannot draw past the left edge.
+    expect(clampRoutePointForPlayer({ x: -11, y: 0 }, { x: -22, y: 4 })).toEqual({
+      x: -1.4,
+      y: 4,
+    })
+    // Nor past the right edge, the back of the field or the downfield edge.
+    expect(clampRoutePointForPlayer({ x: 11, y: 2 }, { x: 30, y: 0 }).x).toBeCloseTo(1.4)
+    expect(clampRoutePointForPlayer({ x: 0, y: 3 }, { x: 0, y: -30 }).y).toBeCloseTo(-10.4)
+    expect(clampRoutePointForPlayer({ x: 0, y: 3 }, { x: 0, y: 30 }).y).toBeCloseTo(14.4)
+  })
+
+  it('leaves a point that is already on the field untouched', () => {
+    const point = { x: 3.25, y: 9 }
+    expect(clampRoutePointForPlayer({ x: -11, y: 2 }, point)).toEqual(point)
+  })
+
+  it('keeps the bow of a point it pulls back in', () => {
+    expect(
+      clampRoutePointForPlayer({ x: -11, y: 0 }, { x: -22, y: 4, curve: 1.5 }),
+    ).toEqual({ x: -1.4, y: 4, curve: 1.5 })
+  })
+
+  it('matches the plain clamp for a player at the origin', () => {
+    for (const point of [
+      { x: -20, y: 2 },
+      { x: 40, y: -20 },
+      { x: 0, y: 30 },
+      { x: 1, y: 2 },
+    ]) {
+      expect(clampRoutePointForPlayer({ x: 0, y: 0 }, point)).toEqual(clampRoutePoint(point))
+    }
+  })
+})
+
+describe('fieldRoutePoints', () => {
+  it('pulls a route that points past the edge back for drawing', () => {
+    expect(
+      fieldRoutePoints({ x: -11, y: 0 }, [
+        { x: 0, y: 3 },
+        { x: -11, y: 6, curve: 0.6 },
+      ]),
+    ).toEqual([{ x: 0, y: 3 }, { x: -1.4, y: 6, curve: 0.6 }])
+  })
+
+  it('leaves a route that is already on the field alone', () => {
+    const points = [{ x: 0, y: 3 }, { x: 4, y: 9, curve: -1 }]
+    expect(fieldRoutePoints({ x: -11, y: 0 }, points)).toEqual(points)
+  })
+
+  it('draws a mirrored route inside the field', () => {
+    const player: Player = {
+      id: 'wr',
+      role: 'Wide Receiver',
+      label: 'WR-L',
+      number: 11,
+      color: '#FF8265',
+      pos: { x: -11, y: 0 },
+      route: null,
+    }
+    // The receiver is on the left sideline and the route runs outward.
+    const shape = routeShape(player, { id: 'route', points: [{ x: 0, y: 3 }, { x: -11, y: 6 }] })
+    const edge = toSvg({ x: -12.4, y: 6 })
+
+    expect(shape?.end.x).toBeCloseTo(edge.x)
+    expect(shape?.end.y).toBeCloseTo(edge.y)
   })
 })
 

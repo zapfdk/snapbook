@@ -5,8 +5,9 @@ import {
   LOS_FROM_TOP,
   absolutePoint,
   clampPlayerPoint,
-  clampRoutePoint,
+  clampRoutePointForPlayer,
   curveFromOffset,
+  fieldRoutePoints,
   routeShape,
   segmentBowPoint,
   segmentOffset,
@@ -118,7 +119,7 @@ export function FieldCanvas({
       return
     }
     if (tool === 'route' && selectedPlayer) {
-      const relative = clampRoutePoint({
+      const relative = clampRoutePointForPlayer(selectedPlayer.pos, {
         x: Number((point.x - selectedPlayer.pos.x).toFixed(2)),
         y: Number((point.y - selectedPlayer.pos.y).toFixed(2)),
       })
@@ -164,7 +165,7 @@ export function FieldCanvas({
       type: 'route',
       playerId: player.id,
       index,
-      points: player.route.points.map((point) => ({ ...point })),
+      points: fieldRoutePoints(player.pos, player.route.points),
     })
   }
 
@@ -186,7 +187,7 @@ export function FieldCanvas({
       type: 'curve',
       playerId: player.id,
       index,
-      points: player.route.points.map((point) => ({ ...point })),
+      points: fieldRoutePoints(player.pos, player.route.points),
     })
   }
 
@@ -194,7 +195,7 @@ export function FieldCanvas({
     if (!player.route) return
     onSetRoutePoints(
       player.id,
-      player.route.points.map((point, position) =>
+      fieldRoutePoints(player.pos, player.route.points).map((point, position) =>
         position === index ? withCurve(point, 0) : point,
       ),
     )
@@ -210,7 +211,7 @@ export function FieldCanvas({
     const point = fieldPoint(event)
     const player = displayPlayers.find((item) => item.id === selectedId)
     if (!point || !player?.route) return
-    const points = player.route.points
+    const points = fieldRoutePoints(player.pos, player.route.points)
     for (let index = points.length - 1; index >= 0; index -= 1) {
       const { from, to } = segmentOf(player, points, index)
       const bow = segmentBowPoint(from, to, points[index].curve)
@@ -248,7 +249,8 @@ export function FieldCanvas({
     if (drag.type === 'route') {
       const player = play.players.find((item) => item.id === drag.playerId)
       if (!player) return
-      const next = clampRoutePoint(
+      const next = clampRoutePointForPlayer(
+        player.pos,
         snapPoint({ x: point.x - player.pos.x, y: point.y - player.pos.y }),
       )
       const points = drag.points.map((routePoint, index) =>
@@ -560,7 +562,7 @@ export function FieldCanvas({
         (() => {
           const player = displayPlayers.find((item) => item.id === selectedId)
           if (!player?.route) return null
-          return player.route.points.map((point, index) => {
+          return fieldRoutePoints(player.pos, player.route.points).map((point, index) => {
             const x = player.pos.x + point.x + FIELD_WIDTH / 2
             const y = LOS_FROM_TOP - (player.pos.y + point.y)
             return (
@@ -584,7 +586,7 @@ export function FieldCanvas({
         (() => {
           const player = displayPlayers.find((item) => item.id === selectedId)
           if (!player?.route?.points.length) return null
-          const points = player.route.points
+          const points = fieldRoutePoints(player.pos, player.route.points)
           return points.map((point, index) => {
             const { from, to } = segmentOf(player, points, index)
             const bow = toSvg(segmentBowPoint(from, to, point.curve))

@@ -1,7 +1,7 @@
 import { jsPDF } from 'jspdf'
 import type { Play, Player, Point, RoutePoint, WristCoachSettings } from '../../types'
 import { hexToRgb, readableInk } from '../color'
-import { segmentControl } from '../geometry'
+import { fieldRoutePoints, segmentControl } from '../geometry'
 import { slugify } from '../files'
 
 export interface WristPage {
@@ -233,7 +233,7 @@ function drawCard(
       doc,
       map,
       player,
-      player.route.points,
+      fieldRoutePoints(player.pos, player.route.points),
       settings.monochrome ? inkHex : player.color,
       routeWidth,
     )
