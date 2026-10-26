@@ -7,8 +7,10 @@ import { NewPlaybookDialog } from './components/NewPlaybookDialog'
 import { PbcExportDialog } from './components/PbcExportDialog'
 import { Modal } from './components/Modal'
 import { ShareDialog } from './components/ShareDialog'
+import { SiteFooter } from './components/SiteFooter'
 import { SyncDialog } from './components/SyncDialog'
 import { Toast, type ToastMessage } from './components/Toast'
+import { UpdatePrompt } from './components/UpdatePrompt'
 import { PlaysView } from './views/PlaysView'
 import { DesignView } from './views/DesignView'
 import { WristCoachView } from './views/WristCoachView'
@@ -17,6 +19,7 @@ import { TeamView } from './views/TeamView'
 import { SharedPlaybookView } from './views/SharedPlaybookView'
 import { usePlaybook } from './store/playbook'
 import { useCloudSync } from './hooks/useCloudSync'
+import { useServiceWorkerUpdate } from './hooks/useServiceWorkerUpdate'
 import { exportNative, importNative } from './lib/files'
 import { mergeSharedPlaybook } from './lib/mergePlaybook'
 import { SHARE_HASH_PREFIX, sharePlaybookFromHash } from './lib/share'
@@ -52,6 +55,7 @@ function readSharedLink(): SharedLink | null {
  */
 export default function App() {
   const [sharedLink, setSharedLink] = useState<SharedLink | null>(readSharedLink)
+  const update = useServiceWorkerUpdate()
 
   useEffect(() => {
     const onHashChange = () => setSharedLink(readSharedLink())
@@ -86,8 +90,8 @@ export default function App() {
     exitSharedLink()
   }
 
-  if (sharedLink) {
-    return sharedLink.playbook ? (
+  const content = sharedLink ? (
+    sharedLink.playbook ? (
       <SharedPlaybookView
         playbook={sharedLink.playbook}
         localPlaybook={usePlaybook.getState().playbook}
@@ -101,9 +105,20 @@ export default function App() {
         onExit={exitSharedLink}
       />
     )
-  }
+  ) : (
+    <LocalPlaybookApp />
+  )
 
-  return <LocalPlaybookApp />
+  return (
+    <>
+      {content}
+      <UpdatePrompt
+        ready={update.state.ready}
+        onReload={update.apply}
+        onDismiss={update.dismiss}
+      />
+    </>
+  )
 }
 
 function InvalidSharedLink({ message, onExit }: { message: string; onExit: () => void }) {
@@ -311,6 +326,8 @@ function LocalPlaybookApp() {
       {view === 'tree' && <RouteTreeView />}
 
       {view === 'team' && <TeamView />}
+
+      <SiteFooter className="mx-auto mt-2 max-w-[1500px] px-4 pb-10 sm:px-6 lg:px-8" />
 
       <NewPlayDialog
         open={newPlayOpen}

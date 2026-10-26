@@ -56,6 +56,31 @@ playbook, wrist-coach settings and route-tree options are restored when you
 come back. The **Saved locally** badge in the playbook header confirms this.
 Nothing leaves the browser unless you connect cloud sync below.
 
+## Offline and updates
+
+The first visit caches the built app — shell, scripts, styles, fonts, icons and
+the privacy page — with a service worker, so an installed copy opens without a
+signal. The playbook was already local, so nothing else is needed to draw up a
+play at practice.
+
+Every build gets a cache name derived from a hash of everything it ships, so a
+new deployment is always distinct. A new version downloads in the background
+and then shows **“A new version of Snapbook is ready”** with a **Reload**
+button. Nothing switches until that button is pressed, so an open playbook is
+never replaced mid-edit; reloading activates the new build and deletes the
+previous cache. Dismissing the notice keeps the current version until the next
+launch or deployment.
+
+Because navigations come from the cache, reloading is the only thing that moves
+the app to a new version — that is the deliberate trade for instant, offline
+starts. Requests are only cached when they are same-origin, so Dropbox API calls
+are never stored or intercepted.
+
+`npm run dev` does not register the worker, leaving hot reload untouched.
+`npm run build` generates `dist/sw.js` after Vite finishes, so use the npm
+script rather than `vite build` alone; a bare Vite build ships without offline
+support.
+
 ## Cloud sync
 
 **Sync** in the header can keep one playbook in step through Dropbox. Snapbook

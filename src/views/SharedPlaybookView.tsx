@@ -18,6 +18,7 @@ import { Logo } from '../components/Logo'
 import { Modal } from '../components/Modal'
 import { PlayDiagram } from '../components/PlayDiagram'
 import { RoutePreview } from '../components/RoutePreview'
+import { SiteFooter } from '../components/SiteFooter'
 import { formatRouteBreak, routeDepth } from '../data/routeLibrary'
 import { cx, exportNative, formatDate } from '../lib/files'
 import { getRosterGroups } from '../lib/roster'
@@ -383,9 +384,7 @@ export function SharedPlaybookView({
           </div>
         </Section>
 
-        <footer className="mt-10 border-t border-line/70 pt-5 text-[0.68rem] text-slate-moss">
-          Shared from Snapbook · read-only view
-        </footer>
+        <SiteFooter className="mt-10" note="Shared from Snapbook · read-only view" />
       </main>
 
       <Modal
