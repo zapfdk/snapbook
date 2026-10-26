@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import {
+  AlertTriangle,
   ChevronDown,
+  Cloud,
+  CloudOff,
   Download,
   FileArchive,
   FileJson,
@@ -9,10 +12,12 @@ import {
   PenTool,
   Plus,
   Printer,
+  RefreshCw,
   Share2,
   Upload,
   Users,
 } from 'lucide-react'
+import type { CloudSyncPhase } from '../lib/cloudSync'
 import { cx } from '../lib/files'
 import { Logo } from './Logo'
 
@@ -28,6 +33,8 @@ interface AppHeaderProps {
   onExportNative: () => void
   onImport: () => void
   onShare: () => void
+  onSync: () => void
+  syncPhase: CloudSyncPhase
 }
 
 const navItems: Array<{ id: View; label: string; icon: typeof Grid2X2 }> = [
@@ -48,8 +55,22 @@ export function AppHeader({
   onExportNative,
   onImport,
   onShare,
+  onSync,
+  syncPhase,
 }: AppHeaderProps) {
   const [menuOpen, setMenuOpen] = useState(false)
+  const syncBusy = syncPhase === 'connecting' || syncPhase === 'syncing'
+  const syncNeedsAttention = syncPhase === 'conflict' || syncPhase === 'error'
+  const syncLabel =
+    syncPhase === 'connected'
+      ? 'Cloud sync — connected and up to date'
+      : syncPhase === 'conflict'
+        ? 'Cloud sync — both copies changed'
+        : syncPhase === 'error'
+          ? 'Cloud sync — needs attention'
+          : syncBusy
+            ? 'Cloud sync — syncing'
+            : 'Cloud sync — not connected'
   const menuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -75,7 +96,7 @@ export function AppHeader({
 
   return (
     <header className="sticky top-0 z-40 border-b border-line/80 bg-ink-950/90 backdrop-blur-xl">
-      <div className="mx-auto flex h-[68px] max-w-[1600px] items-center gap-2 px-4 sm:gap-4 sm:px-6">
+      <div className="mx-auto flex h-[68px] max-w-[1600px] items-center gap-1 px-4 sm:gap-4 sm:px-6">
         <button
           onClick={() => onView('plays')}
           className="shrink-0 rounded-lg text-left focus-visible:outline-offset-4"
@@ -85,7 +106,7 @@ export function AppHeader({
         </button>
 
         <nav
-          className="mx-auto flex items-center gap-0.5 rounded-xl border border-line bg-ink-900 p-1"
+          className="mx-auto flex items-center gap-0 rounded-xl border border-line bg-ink-900 p-1 sm:gap-0.5"
           aria-label="Primary"
         >
           {navItems.map((item) => {
@@ -96,7 +117,7 @@ export function AppHeader({
                 key={item.id}
                 onClick={() => onView(item.id)}
                 className={cx(
-                  'flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-[0.76rem] font-semibold transition-colors sm:px-3.5',
+                  'flex items-center gap-1.5 rounded-lg px-1.5 py-2 text-[0.76rem] font-semibold transition-colors sm:px-3.5',
                   active
                     ? 'bg-ink-750 text-chalk shadow-sm'
                     : 'text-slate-moss hover:text-chalk',
@@ -129,6 +150,27 @@ export function AppHeader({
           >
             <Share2 size={15} />
             <span className="hidden sm:inline">Share</span>
+          </button>
+          <button
+            className={cx(
+              'btn btn-secondary !px-2 min-[380px]:!px-4',
+              syncPhase === 'connected' && '!text-lime',
+              syncNeedsAttention && '!border-coral/30 !text-coral',
+            )}
+            onClick={onSync}
+            aria-label="Cloud sync"
+            title={syncLabel}
+          >
+            {syncPhase === 'connected' ? (
+              <Cloud size={15} />
+            ) : syncNeedsAttention ? (
+              <AlertTriangle size={15} />
+            ) : syncBusy ? (
+              <RefreshCw size={15} className="animate-spin" />
+            ) : (
+              <CloudOff size={15} />
+            )}
+            <span className="hidden sm:inline">Sync</span>
           </button>
           <div className="relative" ref={menuRef}>
             <button

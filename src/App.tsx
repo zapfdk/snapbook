@@ -7,6 +7,7 @@ import { NewPlaybookDialog } from './components/NewPlaybookDialog'
 import { PbcExportDialog } from './components/PbcExportDialog'
 import { Modal } from './components/Modal'
 import { ShareDialog } from './components/ShareDialog'
+import { SyncDialog } from './components/SyncDialog'
 import { Toast, type ToastMessage } from './components/Toast'
 import { PlaysView } from './views/PlaysView'
 import { DesignView } from './views/DesignView'
@@ -15,6 +16,7 @@ import { RouteTreeView } from './views/RouteTreeView'
 import { TeamView } from './views/TeamView'
 import { SharedPlaybookView } from './views/SharedPlaybookView'
 import { usePlaybook } from './store/playbook'
+import { useCloudSync } from './hooks/useCloudSync'
 import { exportNative, importNative } from './lib/files'
 import { mergeSharedPlaybook } from './lib/mergePlaybook'
 import { SHARE_HASH_PREFIX, sharePlaybookFromHash } from './lib/share'
@@ -138,6 +140,7 @@ function LocalPlaybookApp() {
   const playbook = usePlaybook((state) => state.playbook)
   const importPlaybook = usePlaybook((state) => state.importPlaybook)
   const createPlaybook = usePlaybook((state) => state.createPlaybook)
+  const cloud = useCloudSync()
 
   const [view, setView] = useState<View>('plays')
   const [selectedPlayId, setSelectedPlayId] = useState<string | null>(null)
@@ -145,9 +148,19 @@ function LocalPlaybookApp() {
   const [newPlaybookOpen, setNewPlaybookOpen] = useState(false)
   const [pbcOpen, setPbcOpen] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
+  const [syncOpen, setSyncOpen] = useState(false)
   const [toast, setToast] = useState<ToastMessage | null>(null)
   const [pendingImport, setPendingImport] = useState<PendingImport | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const conflictOpened = useRef(false)
+
+  useEffect(() => {
+    if (cloud.state.phase === 'conflict' && !conflictOpened.current) {
+      conflictOpened.current = true
+      setSyncOpen(true)
+    }
+    if (cloud.state.phase !== 'conflict') conflictOpened.current = false
+  }, [cloud.state.phase])
 
   const selectedPlay = playbook.plays.find((play) => play.id === selectedPlayId) ?? null
 
@@ -247,6 +260,8 @@ function LocalPlaybookApp() {
         }}
         onImport={pickImportFile}
         onShare={() => setShareOpen(true)}
+        onSync={() => setSyncOpen(true)}
+        syncPhase={cloud.state.phase}
       />
 
       <input
@@ -333,6 +348,21 @@ function LocalPlaybookApp() {
         playbook={playbook}
         onClose={() => setShareOpen(false)}
         onNotify={notify}
+      />
+
+      <SyncDialog
+        open={syncOpen}
+        onClose={() => setSyncOpen(false)}
+        sync={cloud.state}
+        localPlaybook={playbook}
+        onConnect={() => void cloud.connect()}
+        onDisconnect={cloud.disconnect}
+        onSyncNow={() => void cloud.syncNow()}
+        onResolveConflict={(choice) => void cloud.resolveConflict(choice)}
+        onExportBackup={() => {
+          exportNative(playbook)
+          notify('Snapbook backup downloaded.')
+        }}
       />
 
       <Modal

@@ -43,6 +43,8 @@ npm run build   # typecheck and production build
 - **Share** — generate a read-only link that carries the whole playbook in the
   URL, with no upload and no account. Recipients can merge it into their own
   playbook or use it as an editable copy.
+- **Cloud sync** — optionally keep the playbook in a Dropbox app folder, with
+  automatic uploads, downloads and a conflict dialog when both copies changed.
 - **Backup** — export a readable `.snapbook.json` file, import one back
   (including older backups), or export a password-protected `.pbc` file for
   Playbook Creator.
@@ -52,7 +54,60 @@ npm run build   # typecheck and production build
 Every change is written to this browser's `localStorage` automatically, so the
 playbook, wrist-coach settings and route-tree options are restored when you
 come back. The **Saved locally** badge in the playbook header confirms this.
-Nothing is sent to a server.
+Nothing leaves the browser unless you connect cloud sync below.
+
+## Cloud sync
+
+**Sync** in the header can keep one playbook in step through Dropbox. Snapbook
+uses an **App folder** app, so it can only see a single file it creates,
+`snapbook.json`, under `Apps → <your app name>`. It cannot browse the rest of
+your Dropbox. There is no server in the middle: the browser signs in with OAuth
+PKCE and talks to Dropbox directly.
+
+Google Drive, OneDrive and iCloud are not supported yet.
+
+### Configure the Dropbox app
+
+Cloud sync is disabled until a Dropbox app key is present at build time:
+
+1. In the [Dropbox App Console](https://www.dropbox.com/developers/apps), create
+   a **Scoped access** app with **App folder** access.
+2. On **Permissions**, enable `account_info.read`, `files.content.read`,
+   `files.content.write` and `files.metadata.read`.
+3. On **OAuth 2**, add the exact redirect URI shown in the Sync dialog. It is
+   the directory the app is served from, including the trailing slash, e.g.
+   `https://zapfdk.github.io/snapbook/` or `http://localhost:5173/`.
+4. Put the app key in `.env.local` for local development:
+
+   ```bash
+   VITE_DROPBOX_APP_KEY=your_app_key
+   ```
+
+   For the GitHub Pages build, add `VITE_DROPBOX_APP_KEY` as a repository
+   variable under **Settings → Secrets and variables → Actions → Variables**.
+   The deploy workflow passes it to `npm run build`.
+
+Then open **Sync → Connect Dropbox**. The app key is a public client
+identifier; the app has no client secret in the repository or in the browser.
+
+### How syncing behaves
+
+- Edits are uploaded automatically about 1.5 seconds after they settle, and
+  Dropbox is checked when the window regains focus.
+- Changes from another device are downloaded only when this browser has no
+  unsynced edits.
+- If both sides changed, sync stops and shows a conflict with play counts for
+  each copy. Choose **Keep this browser’s copy** to overwrite Dropbox, or
+  **Use the Dropbox copy** to replace this browser. Download a backup first if
+  unsure.
+- The whole playbook syncs: plays, formations, routes, tags, roster and team
+  names. Wrist-coach and route-tree settings stay on each device.
+- The Dropbox refresh token is kept in this browser’s `localStorage` so the
+  connection survives a reload. **Disconnect** removes the tokens from this
+  browser; revoke the app from Dropbox if you want to remove the grant too.
+- In an installed iOS Home Screen app, Dropbox may open in Safari and the
+  return trip may not land back in the standalone app. Open Snapbook in Safari
+  to connect or resolve a sign-in there.
 
 ## Share links
 
