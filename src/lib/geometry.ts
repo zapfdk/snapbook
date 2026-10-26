@@ -58,6 +58,54 @@ export function segmentControl(
   }
 }
 
+/**
+ * Point on the drawn segment half way along it: the top of its bow, which for a
+ * straight segment is the plain midpoint. This is where the curve handle sits,
+ * so a bow can be dragged to where the pointer is.
+ */
+export function segmentBowPoint(
+  from: Point,
+  to: Point,
+  curve: number | undefined,
+): Point {
+  const control = segmentControl(from, to, curve)
+  if (!control) return { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 }
+  return {
+    x: (from.x + 2 * control.x + to.x) / 4,
+    y: (from.y + 2 * control.y + to.y) / 4,
+  }
+}
+
+/** A route point with its bow set, or no `curve` at all when it is straight. */
+export const withCurve = (point: RoutePoint, curve: number): RoutePoint => {
+  if (curve) return { ...point, curve }
+  const { curve: _straightened, ...rest } = point
+  return rest
+}
+
+/** Signed distance of a pointer from the segment's line, in yards. */
+export function segmentOffset(from: Point, to: Point, pointer: Point): number {
+  const dx = to.x - from.x
+  const dy = to.y - from.y
+  const length = Math.hypot(dx, dy)
+  if (!length) return 0
+  return (
+    (pointer.x - (from.x + to.x) / 2) * (-dy / length) +
+    (pointer.y - (from.y + to.y) / 2) * (dx / length)
+  )
+}
+
+/**
+ * Curve value that puts the top of the bow under the pointer. The drawn bow is
+ * half the stored curve, so the offset doubles; dragging onto the line, or very
+ * close to it, straightens the segment again.
+ */
+export function curveFromOffset(offset: number, step = 0.1, limit = 5): number {
+  if (!Number.isFinite(offset) || Math.abs(offset) < step) return 0
+  const value = Number(snap(offset * 2, step).toFixed(2))
+  return clamp(value, -limit, limit)
+}
+
 export interface RouteShape {
   /** SVG path in field units. */
   d: string

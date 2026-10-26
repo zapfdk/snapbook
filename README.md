@@ -207,6 +207,18 @@ Applying an edited route to a player copies its current points; plays that
 already use older points keep them. Deleting a preset is the same: existing
 plays are untouched.
 
+Every segment also carries a **bow** in yards, positive to one side and negative
+to the other, which the diagram, the printouts and the route tree all follow.
+Bowing a segment is part of this editor: drag the dashed handle in the middle of
+a segment and the route curves toward your pointer — up to 5 yards either way,
+in 0.1-yard steps. Make it straight again by dragging that handle back onto the
+line, double-clicking it, or using **Straighten** for every segment at once.
+Points keep their bow when you move them, and the built-in presets such as Post,
+Out, Curl and Wheel arrive already bent, so a curve can equally be made by
+duplicating one of those. Setting an exact value is still possible by hand
+through the `curve` field, which is specified in
+[docs/snapbook-format.md](docs/snapbook-format.md).
+
 **Formations** (Playbook → Formations) can be added from a fresh five-player
 lineup or created from the current play with **Save formation** in the
 Designer. The formation editor renames the formation and moves its players.

@@ -3,11 +3,17 @@ import {
   FIELD_HEIGHT,
   FIELD_WIDTH,
   LOS_FROM_TOP,
+  absolutePoint,
   clampPlayerPoint,
   clampRoutePoint,
+  curveFromOffset,
   routeShape,
+  segmentBowPoint,
+  segmentOffset,
   snap,
   toField,
+  toSvg,
+  withCurve,
 } from '../lib/geometry'
 import { readableInk } from '../lib/color'
 import type { Play, Player, Point, RoutePoint } from '../types'
@@ -26,17 +32,23 @@ interface FieldCanvasProps {
   onSketch: (points: Point[]) => void
   /** Keeps the formation markers fixed while editing a standalone route. */
   lockPlayers?: boolean
+  /** Shows a handle on each segment for dragging its bow. */
+  curveHandles?: boolean
 }
 
 type DragState =
   | { type: 'player'; playerId: string; offset: Point; pos: Point }
   | { type: 'route'; playerId: string; index: number; points: RoutePoint[] }
+  | { type: 'curve'; playerId: string; index: number; points: RoutePoint[] }
   | null
 
 const snapPoint = (point: Point, step = 0.5): Point => ({
   x: Number(snap(point.x, step).toFixed(2)),
   y: Number(snap(point.y, step).toFixed(2)),
 })
+
+/** How close a double-click has to land to a bow handle to count as a hit. */
+const BOW_HANDLE_RADIUS = 0.6
 
 export function FieldCanvas({
   play,
@@ -49,6 +61,7 @@ export function FieldCanvas({
   onSetRoutePoints,
   onSketch,
   lockPlayers = false,
+  curveHandles = false,
 }: FieldCanvasProps) {
   const svgRef = useRef<SVGSVGElement>(null)
   const [drag, setDrag] = useState<DragState>(null)
@@ -70,7 +83,7 @@ export function FieldCanvas({
         player.id === drag.playerId ? { ...player, pos: drag.pos } : player,
       )
     }
-    if (drag?.type === 'route') {
+    if (drag?.type === 'route' || drag?.type === 'curve') {
       return play.players.map((player) =>
         player.id === drag.playerId && player.route
           ? { ...player, route: { ...player.route, points: drag.points } }
@@ -80,7 +93,7 @@ export function FieldCanvas({
     return play.players
   }, [play.players, drag])
 
-  const fieldPoint = (event: React.PointerEvent): Point | null => {
+  const fieldPoint = (event: { clientX: number; clientY: number }): Point | null => {
     const svg = svgRef.current
     if (!svg) return null
     const rect = svg.getBoundingClientRect()
@@ -115,13 +128,22 @@ export function FieldCanvas({
     onSelect(null)
   }
 
+  const capturePointer = (event: React.PointerEvent) => {
+    try {
+      svgRef.current?.setPointerCapture(event.pointerId)
+    } catch {
+      // Synthetic pointers and older browsers may not support capture; the
+      // drag still works while the pointer stays over the field.
+    }
+  }
+
   const beginPlayerDrag = (event: React.PointerEvent, player: Player) => {
     if (lockPlayers || tool !== 'move' || event.button !== 0) return
     event.stopPropagation()
     onSelect(player.id)
     const point = fieldPoint(event)
     if (!point) return
-    svgRef.current?.setPointerCapture(event.pointerId)
+    capturePointer(event)
     setDrag({
       type: 'player',
       playerId: player.id,
@@ -137,13 +159,66 @@ export function FieldCanvas({
   ) => {
     if (!player.route || event.button !== 0) return
     event.stopPropagation()
-    svgRef.current?.setPointerCapture(event.pointerId)
+    capturePointer(event)
     setDrag({
       type: 'route',
       playerId: player.id,
       index,
       points: player.route.points.map((point) => ({ ...point })),
     })
+  }
+
+  /** Segment ending at `index`, in absolute field coordinates. */
+  const segmentOf = (player: Player, points: RoutePoint[], index: number) => ({
+    from: index === 0 ? player.pos : absolutePoint(player, points[index - 1]),
+    to: absolutePoint(player, points[index]),
+  })
+
+  const beginCurveDrag = (
+    event: React.PointerEvent,
+    player: Player,
+    index: number,
+  ) => {
+    if (!player.route || event.button !== 0) return
+    event.stopPropagation()
+    capturePointer(event)
+    setDrag({
+      type: 'curve',
+      playerId: player.id,
+      index,
+      points: player.route.points.map((point) => ({ ...point })),
+    })
+  }
+
+  const straightenSegment = (player: Player, index: number) => {
+    if (!player.route) return
+    onSetRoutePoints(
+      player.id,
+      player.route.points.map((point, position) =>
+        position === index ? withCurve(point, 0) : point,
+      ),
+    )
+  }
+
+  /**
+   * Double-clicking a bow handle straightens its segment. The handler sits on
+   * the field rather than the handle because a drag leaves the pointer captured
+   * here, which is where the following double-click is delivered.
+   */
+  const handleFieldDoubleClick = (event: React.MouseEvent<SVGSVGElement>) => {
+    if (!curveHandles || tool !== 'move') return
+    const point = fieldPoint(event)
+    const player = displayPlayers.find((item) => item.id === selectedId)
+    if (!point || !player?.route) return
+    const points = player.route.points
+    for (let index = points.length - 1; index >= 0; index -= 1) {
+      const { from, to } = segmentOf(player, points, index)
+      const bow = segmentBowPoint(from, to, points[index].curve)
+      if (Math.hypot(point.x - bow.x, point.y - bow.y) <= BOW_HANDLE_RADIUS) {
+        straightenSegment(player, index)
+        return
+      }
+    }
   }
 
   const handlePointerMove = (event: React.PointerEvent<SVGSVGElement>) => {
@@ -180,6 +255,17 @@ export function FieldCanvas({
         index === drag.index ? { ...routePoint, ...next } : routePoint,
       )
       setDrag({ ...drag, points })
+      return
+    }
+    if (drag.type === 'curve') {
+      const player = play.players.find((item) => item.id === drag.playerId)
+      if (!player) return
+      const { from, to } = segmentOf(player, drag.points, drag.index)
+      const curve = curveFromOffset(segmentOffset(from, to, point))
+      const points = drag.points.map((routePoint, index) =>
+        index === drag.index ? withCurve(routePoint, curve) : routePoint,
+      )
+      setDrag({ ...drag, points })
     }
   }
 
@@ -189,7 +275,9 @@ export function FieldCanvas({
     sketchRef.current = null
     setSketch(null)
     if (drag?.type === 'player') onMovePlayer(drag.playerId, drag.pos)
-    if (drag?.type === 'route') onSetRoutePoints(drag.playerId, drag.points)
+    if (drag?.type === 'route' || drag?.type === 'curve') {
+      onSetRoutePoints(drag.playerId, drag.points)
+    }
     setDrag(null)
   }
 
@@ -219,6 +307,7 @@ export function FieldCanvas({
       onPointerDown={handleBackgroundDown}
       onPointerMove={handlePointerMove}
       onPointerUp={finishDrag}
+      onDoubleClick={handleFieldDoubleClick}
       onPointerCancel={() => {
         sketchRef.current = null
         setSketch(null)
@@ -486,6 +575,38 @@ export function FieldCanvas({
                 style={{ cursor: 'grab' }}
                 onPointerDown={(event) => beginHandleDrag(event, player, index)}
               />
+            )
+          })
+        })()}
+
+      {curveHandles &&
+        tool === 'move' &&
+        (() => {
+          const player = displayPlayers.find((item) => item.id === selectedId)
+          if (!player?.route?.points.length) return null
+          const points = player.route.points
+          return points.map((point, index) => {
+            const { from, to } = segmentOf(player, points, index)
+            const bow = toSvg(segmentBowPoint(from, to, point.curve))
+            return (
+              <circle
+                key={`bow-${index}`}
+                cx={bow.x}
+                cy={bow.y}
+                r={0.2}
+                fill="#0a100c"
+                stroke="#d8ff63"
+                strokeWidth={0.06}
+                strokeDasharray={point.curve ? undefined : '0.12 0.1'}
+                style={{ cursor: 'grab' }}
+                onPointerDown={(event) => beginCurveDrag(event, player, index)}
+              >
+                <title>
+                  {point.curve
+                    ? 'Drag to change this bow · double-click to straighten'
+                    : 'Drag to bow this segment'}
+                </title>
+              </circle>
             )
           })
         })()}

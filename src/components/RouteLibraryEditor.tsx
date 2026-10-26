@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Check, Eraser, PenLine, Undo2, X } from 'lucide-react'
+import { Check, Eraser, Minus, PenLine, Undo2, X } from 'lucide-react'
 import { FieldCanvas } from './FieldCanvas'
 import { Modal } from './Modal'
 import { normalizeHex } from '../lib/color'
 import { cx } from '../lib/files'
+import { withCurve } from '../lib/geometry'
 import {
   ROUTE_GROUPS,
   ROUTE_GROUP_COLORS,
@@ -268,6 +269,17 @@ export function RouteLibraryEditor({
                 <Undo2 size={12} />
                 <span className="hidden sm:inline">Undo point</span>
               </button>
+              <button
+                className="btn btn-secondary !px-2.5 !py-1.5"
+                onClick={() =>
+                  setPoints((current) => current.map((point) => withCurve(point, 0)))
+                }
+                disabled={!points.some((point) => point.curve)}
+                title="Make every segment straight"
+              >
+                <Minus size={12} />
+                <span className="hidden sm:inline">Straighten</span>
+              </button>
               <button className="btn btn-secondary !px-2.5 !py-1.5" onClick={clearPoints}>
                 <Eraser size={12} />
                 <span className="hidden sm:inline">Clear</span>
@@ -308,12 +320,20 @@ export function RouteLibraryEditor({
                 }}
                 onSketch={() => undefined}
                 lockPlayers
+                curveHandles
               />
             </div>
             <p className="mt-2 text-[0.64rem] leading-relaxed text-slate-moss">
               {draft !== null
                 ? 'Click the field to add points. Drag handles to refine, then choose Done.'
-                : 'Drag the round handles to reshape this route. Routes mirror for left and right receivers when applied.'}
+                : 'Drag the round handles to reshape this route, or the dashed one in the middle of a segment to bow it.'}
+            </p>
+            <p className="mt-1.5 text-[0.64rem] leading-relaxed text-slate-moss">
+              <span className="font-semibold text-fog">Tip:</span> a segment bows
+              toward wherever you drag its dashed handle, and the bow keeps its
+              shape as you reshape the route. Make it straight again by dragging
+              the handle back onto the line, double-clicking it, or using{' '}
+              <span className="text-fog">Straighten</span> for the whole route.
             </p>
           </div>
 
