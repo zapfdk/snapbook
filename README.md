@@ -81,7 +81,7 @@ npm run build   # typecheck and production build
   changed, and a conflict dialog when the same playbook changed in both places.
 - **Backup** — export a readable `.snapbook.json` file, import one back
   (including older backups), or export a password-protected `.pbc` file for
-  Playbook Creator.
+  Playbook Creator and open one of those again with its password.
 
 ## Saving and opening
 
@@ -207,7 +207,8 @@ standard route library and standard tags. It joins your library and the
 playbook you have open is left untouched; the dialog still offers a backup
 download. **Import a playbook** (from the Export menu, the library dialog or
 the new-playbook dialog) adds the file as its own library entry the same way,
-as does **Edit a copy** on a shared link.
+as does **Edit a copy** on a shared link. It takes Snapbook JSON and Playbook
+Creator `.pbc` files, the latter after its password.
 
 ## Team setup
 
@@ -353,15 +354,59 @@ The PBC export writes the same encrypted container as PBC 0.22.0:
 The archive writer is covered by tests that compare its token stream with a
 native Boost.Serialization reference. Formation, category and play names must
 be unique because PBC stores them as map keys; the exporter reports this before
-writing a file.
+writing a file. The reader and writer follow PBC's own model classes rather than
+what a file happens to look like: a route is the shared paths plus a name and a
+wrist code, a motion is the shared paths plus the position its player ends up at,
+and PBC draws a route from the end of a motion when the player has one — the same
+origin Snapbook measures from.
 
 The `.pbc` export writes routes with their bows, but it does not write motions
 and has no field for option branches, so those stay behind in a `.pbc` file and
 its routes begin at the player marker rather than at the end of a motion. The
 `.snapbook.json` backup keeps everything.
 
-Reading `.pbc` files back into Snapbook is not implemented. Use the
-`.snapbook.json` backup for round-tripping between Snapbook browsers.
+Reading a `.pbc` file back in is implemented as well. **Import a playbook** takes
+the password the file was saved with — or none at all, for a file saved without
+one — and adds what comes out as its own playbook, leaving whatever you have
+open alone:
+
+- Play, formation and tag names, wrist codes and notes
+- Player alignments, colours, numbers and labels
+- Routes with their bows, and pre-snap motions — a route then begins where its
+  motion ends, the same rule Snapbook draws by
+- Each play's tags, and the formation each play was drawn on
+- The playbook's own route library, beside Snapbook's presets
+
+A Playbook Creator file stores tags as names only, so an imported tag takes
+Snapbook's default colour, and labels are cut to the four characters the file has
+room for. Its route library keeps the names the file uses, so two routes called
+`Post` can meet: the preset stays and the import arrives as `Post (2)`. A `.pbc`
+route carries a wrist code rather than a coaching note, so the code becomes the
+note, and a route is grouped as Quick game, Intermediate or Deep by how far
+downfield it ends, a field the file does not store. The reader mirrors the writer
+token by token, so it also reads what our own export never writes: a route
+library, a motion, a bow on a route, a play's own route names, and a formation
+shared between plays.
+
+Two things stay behind. A play's route carries its own name and wrist code, which
+Snapbook keeps on the library entry instead, so they are left with the play's
+other per-player route fields. PBC's option and alternative routes are read to
+stay in step and then left out, because Snapbook's options branch off a chosen
+point of a route and the file does not record which point. And a file old enough
+to store its players without those route slots — class version 3 arrived with
+Playbook Creator 0.18 — is reported as coming from another release rather than
+guessed at.
+
+A file with no password is recognised either way it was saved: its archive is
+read straight out of the container when it sits there in the open, and opened
+with the empty password when the file was encrypted with one.
+
+Anything else is reported rather than guessed at. A file from another Playbook
+Creator release, a scrambled class table, a token stream that stops early or
+runs long, an archive with data left over, and a container header for a file
+that is not a playbook all say what they found. AES-256-GCM cannot tell a wrong
+password from a damaged file, so that message names both possibilities, and an
+empty field that meets a protected file says the file needs a password.
 
 ## Reminders
 
@@ -371,12 +416,6 @@ Small things to pick up another time:
   route draws its path and then the arrowhead at the same endpoint, so the
   round stroke cap and the arrow overlap and the finish reads oddly. The arrow
   should sit on the end of the line without the line showing through it.
-- **Read `.pbc` files back in.** Importing a Playbook Creator file is not
-  implemented — the app turns the file away and points at the JSON backup —
-  while the export side is complete. It needs the AES-256-GCM container
-  opened, the Boost.Serialization text archive (version 19) parsed, and its
-  plays, formations and categories mapped into the Snapbook model, with the
-  same name-uniqueness rules the exporter enforces.
 - **Run a security review of the repository.** The Dropbox sign-in path has
   been looked at — PKCE with no client secret, the OAuth `state` compared
   against a sessionStorage record before the code is exchanged, the callback

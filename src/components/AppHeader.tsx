@@ -249,7 +249,7 @@ export function AppHeader({
                 <MenuItem
                   icon={<Upload size={16} />}
                   title="Import a playbook"
-                  detail="Snapbook JSON files, including older backups"
+                  detail="Snapbook JSON files and Playbook Creator .pbc"
                   onClick={() => run(onImport)}
                 />
               </div>

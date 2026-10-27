@@ -5,6 +5,7 @@ import { Logo } from './components/Logo'
 import { NewPlayDialog } from './components/NewPlayDialog'
 import { NewPlaybookDialog } from './components/NewPlaybookDialog'
 import { PbcExportDialog } from './components/PbcExportDialog'
+import { PbcImportDialog, type PbcImportRequest } from './components/PbcImportDialog'
 import { PlaybookLibraryDialog } from './components/PlaybookLibraryDialog'
 import { Modal } from './components/Modal'
 import { ShareDialog } from './components/ShareDialog'
@@ -178,6 +179,7 @@ function LocalPlaybookApp() {
   const [newPlayOpen, setNewPlayOpen] = useState(false)
   const [newPlaybookOpen, setNewPlaybookOpen] = useState(false)
   const [pbcOpen, setPbcOpen] = useState(false)
+  const [pbcImport, setPbcImport] = useState<PbcImportRequest | null>(null)
   const [shareOpen, setShareOpen] = useState(false)
   const [syncOpen, setSyncOpen] = useState(false)
   const [libraryOpen, setLibraryOpen] = useState(false)
@@ -270,8 +272,10 @@ function LocalPlaybookApp() {
 
   const handleImportFile = async (file: File) => {
     try {
+      // A .pbc file is encrypted, so the password dialog opens first and the
+      // playbook it holds goes through the same confirmation as a JSON import.
       if (file.name.toLowerCase().endsWith('.pbc')) {
-        notify('Importing .pbc files is not supported yet. Use the Snapbook JSON backup.', 'error')
+        setPbcImport({ fileName: file.name, bytes: new Uint8Array(await file.arrayBuffer()) })
         return
       }
       const imported = await importNative(file)
@@ -312,7 +316,7 @@ function LocalPlaybookApp() {
       <input
         ref={fileInputRef}
         type="file"
-        accept=".json,.snapbook,application/json"
+        accept=".json,.snapbook,.pbc,application/json"
         className="hidden"
         onChange={(event) => {
           const file = event.target.files?.[0]
@@ -422,6 +426,16 @@ function LocalPlaybookApp() {
         onClose={() => setPbcOpen(false)}
         playbook={playbook}
         onSuccess={(message) => notify(message)}
+      />
+
+      <PbcImportDialog
+        file={pbcImport}
+        onClose={() => setPbcImport(null)}
+        onImported={(imported) => {
+          if (!pbcImport) return
+          setPendingImport({ fileName: pbcImport.fileName, playbook: imported })
+          setPbcImport(null)
+        }}
       />
 
       <ShareDialog
