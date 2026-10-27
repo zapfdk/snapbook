@@ -416,6 +416,23 @@ Small things to pick up another time:
   route draws its path and then the arrowhead at the same endpoint, so the
   round stroke cap and the arrow overlap and the finish reads oddly. The arrow
   should sit on the end of the line without the line showing through it.
+- **The drag handles in the wrist coach card list do not drag.** Every card in
+  the export view shows a grip icon, but the order can only be changed with the
+  up and down buttons beside it, so the grip reads as a control that does
+  nothing. Dragging a card — and dropping it between two others — should reorder
+  the wrist-coach pages the same way the buttons do.
+- **Wrist coach pages should start in landscape.** The page-size presets and the
+  default 100 × 150 mm sheet are all portrait, while the route tree opens in
+  landscape. Flipping the dimensions already works — the swap button beside the
+  width and height fields trades them — so this is about the starting
+  orientation and about offering landscape sizes in the preset list.
+- **List the plays that use a formation or a route.** The formation library
+  counts plays ("Used by 3 plays") but there is no way to see which ones, and the
+  route library says nothing about where a route is used. Both should offer a
+  shortcut from the card — the count, or a menu entry — that lists the plays using
+  it and opens one. A play names its formation, so that is a lookup; a play keeps
+  its own route points, so a route has to be found by the shape it was applied
+  from, which the sketch matcher already does.
 - **Run a security review of the repository.** The Dropbox sign-in path has
   been looked at — PKCE with no client secret, the OAuth `state` compared
   against a sessionStorage record before the code is exchanged, the callback
