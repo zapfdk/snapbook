@@ -1,6 +1,6 @@
 import type { Category, Play, Playbook, Player, RoutePoint } from '../../types'
 import { BoostTextArchive } from './boostWriter'
-import { fieldRoutePoints, segmentControl } from '../geometry'
+import { fieldRoutePoints, offsetPoint, routeOrigin, segmentControl } from '../geometry'
 
 export const PBC_VERSION = '0.22.0'
 const BOOST_LIBRARY_VERSION = 19
@@ -77,9 +77,12 @@ const toPbcRelative = (player: Player, absolute: { x: number; y: number }) => {
 const routeToPbc = (player: Player, points: RoutePoint[]): ExRoute | null => {
   if (!points.length) return null
   const paths: ExPath[] = []
-  let previous = { ...player.pos }
+  // Playbook Creator has no motion here, but the route still begins where the
+  // shift ends and keeps the shape Snapbook draws for it.
+  const origin = routeOrigin(player)
+  let previous = origin
   for (const point of points) {
-    const absolute = { x: player.pos.x + point.x, y: player.pos.y + point.y }
+    const absolute = offsetPoint(origin, point)
     const control = segmentControl(previous, absolute, point.curve)
     paths.push({
       endpoint: toPbcRelative(player, absolute),
@@ -106,7 +109,7 @@ const toExPlayer = (player: Player, withRoute: boolean): ExPlayer => ({
   },
   route:
     withRoute && player.route
-      ? routeToPbc(player, fieldRoutePoints(player.pos, player.route.points))
+      ? routeToPbc(player, fieldRoutePoints(routeOrigin(player), player.route.points))
       : null,
   number: player.number && player.number > 0 ? Math.min(99, Math.round(player.number)) : 0,
 })

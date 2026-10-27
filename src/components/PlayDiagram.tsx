@@ -1,6 +1,16 @@
 import { memo } from 'react'
 import { readableInk } from '../lib/color'
-import { FIELD_HEIGHT, FIELD_WIDTH, LOS_FROM_TOP, routeShape, toSvg } from '../lib/geometry'
+import {
+  FIELD_HEIGHT,
+  FIELD_WIDTH,
+  LOS_FROM_TOP,
+  MOTION_DASH,
+  OPTION_ROUTE_DASH,
+  motionShape,
+  optionShapes,
+  routeShape,
+  toSvg,
+} from '../lib/geometry'
 import type { Player } from '../types'
 
 interface PlayDiagramProps {
@@ -99,21 +109,61 @@ export const PlayDiagram = memo(function PlayDiagram({
       )}
 
       {players.map((player) => {
-        if (!player.route) return null
-        const shape = routeShape(player, player.route)
+        if (!player.motion?.points.length) return null
+        const shape = motionShape(player, player.motion)
         if (!shape) return null
         const color = routeColor ? player.color : paper ? '#141914' : '#f3f3e8'
         return (
-          <g key={`route-${player.id}`}>
+          <g key={`motion-${player.id}`}>
             <path
               d={shape.d}
               fill="none"
               stroke={color}
-              strokeWidth={0.3 * strokeScale}
+              strokeWidth={0.2 * strokeScale}
               strokeLinecap="round"
               strokeLinejoin="round"
+              strokeDasharray={MOTION_DASH}
             />
-            <polygon points={shape.arrow} fill={color} />
+            <polygon points={shape.arrow} fill={color} opacity={0.85} />
+          </g>
+        )
+      })}
+
+      {players.map((player) => {
+        if (!player.route) return null
+        const shape = routeShape(player, player.route)
+        const options = optionShapes(player, player.route)
+        if (!shape && !options.length) return null
+        const color = routeColor ? player.color : paper ? '#141914' : '#f3f3e8'
+        return (
+          <g key={`route-${player.id}`}>
+            {shape && (
+              <>
+                <path
+                  d={shape.d}
+                  fill="none"
+                  stroke={color}
+                  strokeWidth={0.3 * strokeScale}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+                <polygon points={shape.arrow} fill={color} />
+              </>
+            )}
+            {options.map((option, index) => (
+              <g key={`option-${player.id}-${index}`}>
+                <path
+                  d={option.d}
+                  fill="none"
+                  stroke={color}
+                  strokeWidth={0.26 * strokeScale}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeDasharray={OPTION_ROUTE_DASH}
+                />
+                <polygon points={option.arrow} fill={color} opacity={0.9} />
+              </g>
+            ))}
           </g>
         )
       })}

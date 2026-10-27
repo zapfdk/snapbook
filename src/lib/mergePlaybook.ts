@@ -6,6 +6,7 @@ import {
   type Play,
   type Playbook,
   type Player,
+  type RouteOption,
   type RoutePoint,
 } from '../types'
 
@@ -67,13 +68,32 @@ const sameAlignment = (left: Formation, right: Formation) =>
 const clonePoints = (points: RoutePoint[]): RoutePoint[] =>
   points.map((point) => ({ ...point }))
 
+const cloneRouteOptions = (options: RouteOption[] | undefined): RouteOption[] | undefined =>
+  options?.length
+    ? options.map((option) => ({
+        id: createId(),
+        from: option.from,
+        points: clonePoints(option.points),
+      }))
+    : undefined
+
 const clonePlayer = (player: Player, keepRoute: boolean): Player => ({
   ...player,
   id: createId(),
   pos: { ...player.pos },
   route:
     keepRoute && player.route
-      ? { id: createId(), points: clonePoints(player.route.points) }
+      ? {
+          id: createId(),
+          points: clonePoints(player.route.points),
+          ...(player.route.options?.length
+            ? { options: cloneRouteOptions(player.route.options) }
+            : {}),
+        }
+      : null,
+  motion:
+    keepRoute && player.motion
+      ? { id: createId(), points: clonePoints(player.motion.points) }
       : null,
 })
 
@@ -105,7 +125,16 @@ const playFingerprint = (
       color: player.color,
       pos: [player.pos.x, player.pos.y],
       route: player.route?.points.length
-        ? player.route.points.map((point) => [point.x, point.y, point.curve ?? 0])
+        ? {
+            points: player.route.points.map((point) => [point.x, point.y, point.curve ?? 0]),
+            options: (player.route.options ?? []).map((option) => ({
+              from: option.from,
+              points: option.points.map((point) => [point.x, point.y, point.curve ?? 0]),
+            })),
+          }
+        : null,
+      motion: player.motion?.points.length
+        ? player.motion.points.map((point) => [point.x, point.y, point.curve ?? 0])
         : null,
     })),
   })

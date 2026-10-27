@@ -86,6 +86,12 @@ interface FileRoute {
   points: FilePoint[]
 }
 
+/** A branch that leaves a route at one of its points. */
+interface FileRouteOption {
+  from: number
+  points: FilePoint[]
+}
+
 interface FilePlay {
   name: string
   code?: string
@@ -94,6 +100,8 @@ interface FilePlay {
   notes?: string
   updatedAt?: string
   routes?: Record<string, FilePoint[]>
+  motions?: Record<string, FilePoint[]>
+  optionRoutes?: Record<string, FileRouteOption[]>
   lineup?: Record<string, Partial<FilePlayer>>
 }
 
@@ -224,11 +232,30 @@ export function createSnapbookFile(
 
         const keys = playerKeys(formation.players)
         const routes: Record<string, FilePoint[]> = {}
+        const motions: Record<string, FilePoint[]> = {}
+        const optionRoutes: Record<string, FileRouteOption[]> = {}
         const lineup: Record<string, Partial<FilePlayer>> = {}
 
         play.players.forEach((player, index) => {
           const key = keys[index]
-          if (player.route?.points.length) routes[key] = filePoints(player.route.points)
+          if (player.route?.points.length) {
+            routes[key] = filePoints(player.route.points)
+            // A branch must leave a route point that the file still carries.
+            const options = (player.route.options ?? []).filter(
+              (option) =>
+                Number.isInteger(option.from) &&
+                option.from >= 0 &&
+                option.from < player.route!.points.length &&
+                option.points.length > 0,
+            )
+            if (options.length) {
+              optionRoutes[key] = options.map((option) => ({
+                from: option.from,
+                points: filePoints(option.points),
+              }))
+            }
+          }
+          if (player.motion?.points.length) motions[key] = filePoints(player.motion.points)
           const patch = lineupPatch(formation.players[index], player)
           if (Object.keys(patch).length) lineup[key] = patch
         })
@@ -245,6 +272,8 @@ export function createSnapbookFile(
           ...(play.notes.trim() ? { notes: play.notes } : {}),
           ...(play.updatedAt ? { updatedAt: play.updatedAt } : {}),
           ...(Object.keys(routes).length ? { routes } : {}),
+          ...(Object.keys(motions).length ? { motions } : {}),
+          ...(Object.keys(optionRoutes).length ? { optionRoutes } : {}),
           ...(Object.keys(lineup).length ? { lineup } : {}),
         }
       }),
@@ -524,6 +553,60 @@ function parseSnapbookV2(raw: UnknownRecord): Playbook {
       }
       const points = parseFilePoints(value, `The route for “${key}” in “${playName}”`)
       if (points.length) players[playerIndex].route = { id: createId(), points }
+    }
+
+    const motions =
+      play.motions === undefined
+        ? {}
+        : asRecord(play.motions, `The motions for “${playName}” are malformed.`)
+    for (const [key, value] of Object.entries(motions)) {
+      const playerIndex = keyIndexes.get(key)
+      if (playerIndex === undefined) {
+        throw new Error(`Play “${playName}” has a motion for the unknown player “${key}”.`)
+      }
+      const points = parseFilePoints(value, `The motion for “${key}” in “${playName}”`)
+      if (points.length) players[playerIndex].motion = { id: createId(), points }
+    }
+
+    const optionRoutes =
+      play.optionRoutes === undefined
+        ? {}
+        : asRecord(
+            play.optionRoutes,
+            `The option routes for “${playName}” are malformed.`,
+          )
+    for (const [key, value] of Object.entries(optionRoutes)) {
+      const playerIndex = keyIndexes.get(key)
+      if (playerIndex === undefined) {
+        throw new Error(
+          `Play “${playName}” has an option route for the unknown player “${key}”.`,
+        )
+      }
+      const route = players[playerIndex].route
+      if (!route) {
+        throw new Error(
+          `Play “${playName}” has an option route for “${key}”, who has no route.`,
+        )
+      }
+      const entries = asArray(
+        value,
+        `The option routes for “${key}” in “${playName}” must be a list.`,
+      )
+      const options = entries.flatMap((entry, optionIndex) => {
+        const message = `Option ${optionIndex + 1} for “${key}” in “${playName}”`
+        const option = asRecord(entry, `${message} is malformed.`)
+        const from = option.from
+        if (typeof from !== 'number' || !Number.isInteger(from)) {
+          throw new Error(`${message} is missing a route point to branch from.`)
+        }
+        if (from < 0 || from >= route.points.length) {
+          throw new Error(`${message} branches from a point the route does not have.`)
+        }
+        const points = parseFilePoints(option.points, message)
+        if (!points.length) return []
+        return [{ id: createId(), from, points }]
+      })
+      if (options.length) route.options = options
     }
 
     const tags = play.tags === undefined ? [] : asArray(play.tags, `The tags for “${playName}” are malformed.`)

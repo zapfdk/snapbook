@@ -503,6 +503,110 @@ const cases: InvalidCase[] = [
     error: /point 1 has an invalid curve/,
   },
   {
+    name: 'a non-object play motions value',
+    build: () =>
+      mutateFixture((_file, book) => {
+        firstPlay(book).motions = []
+      }),
+    error: /The motions for “Mesh Right” are malformed/,
+  },
+  {
+    name: 'a motion for an unknown player',
+    build: () =>
+      mutateFixture((_file, book) => {
+        firstPlay(book).motions = { Z: [{ x: 0, y: 1 }] }
+      }),
+    error: /Play “Mesh Right” has a motion for the unknown player “Z”/,
+  },
+  {
+    name: 'a motion that is not a point list',
+    build: () =>
+      mutateFixture((_file, book) => {
+        firstPlay(book).motions = { C: 'across' }
+      }),
+    error: /The motion for “C” in “Mesh Right” must be a list of route points/,
+  },
+  {
+    name: 'a non-object option route map',
+    build: () =>
+      mutateFixture((_file, book) => {
+        firstPlay(book).optionRoutes = 'C'
+      }),
+    error: /The option routes for “Mesh Right” are malformed/,
+  },
+  {
+    name: 'an option route for an unknown player',
+    build: () =>
+      mutateFixture((_file, book) => {
+        firstPlay(book).optionRoutes = { Z: [{ from: 0, points: [{ x: 0, y: 1 }] }] }
+      }),
+    error: /Play “Mesh Right” has an option route for the unknown player “Z”/,
+  },
+  {
+    name: 'an option route for a player without a route',
+    build: () =>
+      mutateFixture((_file, book) => {
+        firstPlay(book).optionRoutes = { QB: [{ from: 0, points: [{ x: 0, y: 1 }] }] }
+      }),
+    error: /Play “Mesh Right” has an option route for “QB”, who has no route/,
+  },
+  {
+    name: 'an option route value that is not a list',
+    build: () =>
+      mutateFixture((_file, book) => {
+        firstPlay(book).optionRoutes = { C: 'across' }
+      }),
+    error: /The option routes for “C” in “Mesh Right” must be a list/,
+  },
+  {
+    name: 'a malformed option entry',
+    build: () =>
+      mutateFixture((_file, book) => {
+        firstPlay(book).optionRoutes = { C: [null] }
+      }),
+    error: /Option 1 for “C” in “Mesh Right” is malformed/,
+  },
+  {
+    name: 'an option without a route point to branch from',
+    build: () =>
+      mutateFixture((_file, book) => {
+        firstPlay(book).optionRoutes = { C: [{ points: [{ x: 0, y: 1 }] }] }
+      }),
+    error: /Option 1 for “C” in “Mesh Right” is missing a route point to branch from/,
+  },
+  {
+    name: 'a fractional option branch point',
+    build: () =>
+      mutateFixture((_file, book) => {
+        firstPlay(book).optionRoutes = { C: [{ from: 0.5, points: [{ x: 0, y: 1 }] }] }
+      }),
+    error: /Option 1 for “C” in “Mesh Right” is missing a route point to branch from/,
+  },
+  {
+    name: 'an option branching from a point the route does not have',
+    build: () =>
+      mutateFixture((_file, book) => {
+        firstPlay(book).optionRoutes = { C: [{ from: 4, points: [{ x: 0, y: 1 }] }] }
+      }),
+    error: /Option 1 for “C” in “Mesh Right” branches from a point the route does not have/,
+  },
+  {
+    name: 'option points that are not a list',
+    build: () =>
+      mutateFixture((_file, book) => {
+        firstPlay(book).optionRoutes = { C: [{ from: 0, points: 'wide' }] }
+      }),
+    error: /Option 1 for “C” in “Mesh Right” must be a list of route points/,
+  },
+  {
+    name: 'an option point without y',
+    build: () =>
+      mutateFixture((_file, book) => {
+        firstPlay(book).optionRoutes = { C: [{ from: 0, points: [{ x: 0 }] }] }
+      }),
+    error: /Option 1 for “C” in “Mesh Right” point 1 is missing y/,
+  },
+  {
     name: 'a non-array play tags value',
     build: () =>
       mutateFixture((_file, book) => {

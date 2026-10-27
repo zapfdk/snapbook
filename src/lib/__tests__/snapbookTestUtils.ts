@@ -196,7 +196,18 @@ export function semantics(book: Playbook) {
         color: entry.color,
         x: round(entry.pos.x),
         y: round(entry.pos.y),
-        route: entry.route ? entry.route.points.map(roundedPoint) : null,
+        route: entry.route
+          ? {
+              points: entry.route.points.map(roundedPoint),
+              options: (entry.route.options ?? []).map((option) => ({
+                from: option.from,
+                points: option.points.map(roundedPoint),
+              })),
+            }
+          : null,
+        motion: entry.motion?.points.length
+          ? entry.motion.points.map(roundedPoint)
+          : null,
       })),
     })),
   }
@@ -291,7 +302,23 @@ export function randomPlaybook(seed: number): Playbook {
     }))
 
     for (const entry of players) {
-      if (chance(0.65)) entry.route = { id: id('player-route'), points: points(1) }
+      if (chance(0.65)) {
+        const routePoints = points(1)
+        entry.route = {
+          id: id('player-route'),
+          points: routePoints,
+          ...(chance(0.4)
+            ? {
+                options: Array.from({ length: 1 + int(2) }, () => ({
+                  id: id('route-option'),
+                  from: int(routePoints.length),
+                  points: points(1),
+                })),
+              }
+            : {}),
+        }
+      }
+      if (chance(0.35)) entry.motion = { id: id('player-motion'), points: points(1) }
       if (chance(0.45)) entry.label = pick(LABELS)
       if (chance(0.25)) entry.role = pick(ROLES)
       if (chance(0.2)) entry.number = chance(0.5) ? null : 1 + int(99)

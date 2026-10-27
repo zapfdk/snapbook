@@ -118,11 +118,18 @@ Writer rules:
 
 - Every schema change increments `version`.
 - Additive, optional fields that an older reader can ignore leave
-  `minReaderVersion` unchanged. Revision 3 added the optional route library and
-  therefore still declares minimum reader 2.
+  `minReaderVersion` unchanged. Revision 3 added the optional route library,
+  `motions` and `optionRoutes`, and therefore still declares minimum reader 2.
+  An older revision-3 reader ignores motions and option markers: it opens the
+  file and draws plain routes without losing anything else.
 - A new required field, a removed or renamed field, or a change in the meaning
   of an existing field MUST raise `minReaderVersion` so older readers refuse the
   file instead of silently losing data.
+- Revision 3 also settled where a route's offsets are measured from: the route's
+  start, which is the end of that player's motion when the play has one. A
+  reader that measures them from the alignment instead still opens the file and
+  draws every route — only the picture differs, and only for a player who has
+  both a motion and a route — so nothing is lost and `minReaderVersion` stays 2.
 - A previously published revision MUST NOT be reused with different semantics.
 - A file's `version` should describe the writer revision, even when the writer
   emits no data that requires the new revision.
@@ -242,17 +249,19 @@ The writer always emits `label`, `role`, `color`, `x` and `y`. It omits
 
 | Field | Type | Required | Default on read | Meaning |
 | --- | --- | --- | --- | --- |
-| `x` | number | yes | — | Horizontal offset in yards from the player's alignment. Positive is right. |
-| `y` | number | yes | — | Downfield offset in yards from the player's alignment. Positive is downfield. |
+| `x` | number | yes | — | Horizontal offset in yards from where the route starts. Positive is right. |
+| `y` | number | yes | — | Downfield offset in yards from where the route starts. Positive is downfield. |
 | `curve` | number | no | `0` | Bow of the segment leading into this point, in yards. |
 
-Coordinates inside `routes` are offsets from the player's alignment, not
-absolute field coordinates. For a play route, add the route point to the
-formation or lineup position of that player. The axes remain field-aligned:
-positive `x` is to the right and positive `y` is downfield.
+Coordinates inside `routes` are offsets from the start of that route, not
+absolute field coordinates. The start is the player's alignment, or — when the
+play gives that player a `motions` entry — the motion's last point. Add the route
+offset to the formation or lineup position of that player, plus the motion's end
+when there is one. The axes remain field-aligned: positive `x` is to the right
+and positive `y` is downfield.
 
 `curve` applies to the segment that ends at this point. The first point's
-segment starts at the player's alignment. A missing or zero `curve` is a straight
+segment starts where the route starts. A missing or zero `curve` is a straight
 line. For a non-zero curve, the segment is a quadratic Bézier curve with:
 
 - start point `P0` (the player or the previous route point),
@@ -289,9 +298,10 @@ A library route is a reusable route shape, not a route attached to a player.
 | `note` | string | no | `""` | Coaching note. |
 | `points` | array of [points](#points-and-route-points) | yes | — | MUST contain at least one point. |
 
-Library route points are still relative to a receiver's alignment. They do not
-store which side of the formation will use them; an application may mirror a
-preset when applying it. The format stores exactly the coordinate list shown.
+Library route points are relative to a receiver, measured from where that
+receiver's route starts. They do not store which side of the formation will use
+them; an application may mirror a preset when applying it. The format stores
+exactly the coordinate list shown.
 
 The writer omits `note` when it is empty or whitespace-only. It always writes a
 valid `group` and `color`.
@@ -315,6 +325,14 @@ per-play lineup changes.
       { "x": 12, "y": 4.2, "curve": 1 }
     ]
   },
+  "motions": {
+    "WR-L": [{ "x": -4, "y": 0 }]
+  },
+  "optionRoutes": {
+    "WR-L": [
+      { "from": 0, "points": [{ "x": 2, "y": 6 }, { "x": 6, "y": 9 }] }
+    ]
+  },
   "lineup": {
     "WR-L": {
       "label": "X",
@@ -336,6 +354,8 @@ per-play lineup changes.
 | `notes` | string | no | `""` | Coaching notes. |
 | `updatedAt` | string | no | import time | Informational ISO-8601 timestamp. A reader may normalize it or replace an invalid value. |
 | `routes` | object | no | `{}` | Map of player key to route point array. |
+| `motions` | object | no | `{}` | Map of player key to pre-snap motion point array. |
+| `optionRoutes` | object | no | `{}` | Map of player key to that route's option branches. |
 | `lineup` | object | no | `{}` | Map of player key to a partial player override. |
 
 There is no `createdAt` in the format. Snapbook sets the imported play's
@@ -346,7 +366,8 @@ readable, but producers SHOULD make them unique.
 
 ### Player keys
 
-`routes` and `lineup` use a computed **player key** rather than a player id.
+`routes`, `motions`, `optionRoutes` and `lineup` use a computed **player key**
+rather than a player id.
 Both sides MUST derive the key from the formation lineup in order. The algorithm
 is:
 
@@ -375,9 +396,9 @@ Examples for labels `["WR", "WR", "WR #2"]` in that order:
 | second `WR` | `WR #2` |
 | label already named `WR #2` | `WR #2 #2` |
 
-References in `routes` and `lineup` MUST match these keys exactly
-(case-sensitively). A key that is not in the computed lineup makes the file
-invalid.
+References in `routes`, `motions`, `optionRoutes` and `lineup` MUST match these
+keys exactly (case-sensitively). A key that is not in the computed lineup makes
+the file invalid.
 
 ### Route entries
 
@@ -396,10 +417,80 @@ Each member of `routes` maps a player key to an array of
 
 - A player without a route SHOULD be omitted.
 - An empty point array is readable and means "no route"; Snapbook ignores it.
-- A route is always relative to that player's alignment, including any lineup
-  override for the play.
-- A player may have a one-point route. It is drawn from the player to that
-  point.
+- A route is always relative to **where that route starts**, including any
+  lineup override for the play: the player's alignment, or the last point of
+  that player's `motions` entry when the play gives them one. Offsets stay the
+  same when the motion moves, so a shift and its route travel together.
+- A player may have a one-point route. It is drawn from the start of the route
+  to that point.
+
+### Motions
+
+A motion is a pre-snap movement drawn from the player's alignment, stored
+exactly like a route under `motions`:
+
+```json
+"motions": {
+  "WR-L": [
+    { "x": -4, "y": 0 },
+    { "x": -4, "y": 2, "curve": 0.5 }
+  ]
+}
+```
+
+- Points use the same [point rules](#points-and-route-points) as routes,
+  relative to the player's alignment and including any lineup override.
+- A player has at most one motion. An empty point array means "no motion" and
+  Snapbook ignores it, so a player without a motion SHOULD be omitted.
+- A motion starts at the player's alignment and ends at its last point.
+- The writer draws motions **dashed** to tell them apart from routes, and draws
+  that player's route, and every option that leaves it, from the motion's end
+  rather than from the alignment, so the shift and the route read as one
+  movement. That is also why a route's points are offsets from the motion's end
+  whenever the play has one: moving the motion moves the whole route with it
+  instead of stretching its first segment. The stored points never change.
+- Dash pattern, arrowheads and the origin a route is measured from are
+  presentation choices of the application; the stored points are unaffected.
+
+A motion is not a route: it does not replace `routes` and a player may have both.
+
+### Option routes
+
+An option branch is an alternative a receiver can break into instead of
+finishing the route, usually by reading leverage. Each branch leaves the route
+at one of the route's own points, so a route may have none, one or several:
+
+```json
+"routes": {
+  "WR-L": [
+    { "x": 0, "y": 3 },
+    { "x": 8, "y": 6 },
+    { "x": 12, "y": 10 }
+  ]
+},
+"optionRoutes": {
+  "WR-L": [
+    { "from": 0, "points": [{ "x": 2, "y": 7 }, { "x": 6, "y": 9 }] },
+    { "from": 1, "points": [{ "x": 10, "y": 3 }] }
+  ]
+}
+```
+
+- The key MUST name a player who has a non-empty entry in `routes`. A key
+  without a route makes the file invalid, because its branches cannot be placed.
+- `from` is a zero-based index into that route's point array. It MUST be an
+  integer that names an existing point. The route's points are the only places a
+  branch may leave from.
+- `points` is an array of [route points](#points-and-route-points), relative to
+  the same origin as the route's own points — the alignment, or the end of the
+  player's motion when the play has one. The branch is drawn from the route
+  point at `from` and ends at the last of these points. An empty array is
+  readable and adds no branch.
+- Order is preserved: branches are written in the order they are stored.
+- An absent `optionRoutes` member or an absent key means no branches.
+- The writer draws option branches **dotted** and keeps the route itself solid.
+  Applications may use a different decoration, but should keep branches
+  visually distinct from the route they leave.
 
 ### Lineup patches
 
@@ -441,8 +532,8 @@ where they matter for interoperability.
    as `0`.
 4. **Empty optional values are omitted.** Formation `number: null` is omitted;
    route `note` is omitted when blank; play `code`, `tags`, `notes`,
-   `updatedAt`, `routes` and `lineup` are omitted when empty. A play still
-   writes `name` and `formation`.
+   `updatedAt`, `routes`, `motions`, `optionRoutes` and `lineup` are omitted
+   when empty. A play still writes `name` and `formation`.
 5. **No local state is exported.** Object ids, creation timestamps, selection,
    UI settings and unknown extension fields do not appear in the output.
 6. **Output is deterministic.** For the same playbook and `exportedAt`, the

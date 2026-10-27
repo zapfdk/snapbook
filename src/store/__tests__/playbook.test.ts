@@ -293,3 +293,329 @@ describe('routes written into a play', () => {
     expect(points()).toEqual([{ x: -1.4, y: 0 }, { x: 5, y: 17.4, curve: 1.5 }])
   })
 })
+
+describe('motions and option routes in a play', () => {
+  const motionBook = (): Playbook => ({
+    ...book('motion', 'Motion'),
+    plays: [
+      {
+        id: 'motion-play',
+        name: 'Motion',
+        codeName: '',
+        formationId: 'none',
+        players: [
+          {
+            id: 'wr',
+            role: 'Wide Receiver Left',
+            label: 'WR-L',
+            number: 11,
+            color: '#FF8265',
+            pos: { x: -11, y: 0 },
+            route: null,
+            motion: null,
+          },
+        ],
+        categories: [],
+        notes: '',
+        createdAt: '2026-10-01T00:00:00.000Z',
+        updatedAt: '2026-10-01T00:00:00.000Z',
+      },
+    ],
+  })
+
+  let store: typeof import('../playbook')
+
+  beforeAll(async () => {
+    vi.stubGlobal('localStorage', storage())
+    vi.stubGlobal('sessionStorage', storage())
+    store = await import('../playbook')
+  })
+
+  const install = () => {
+    const playbook = motionBook()
+    store.usePlaybook.setState({ playbooks: [playbook], activeId: playbook.id })
+  }
+
+  const player = () => store.usePlaybook.getState().playbooks[0].plays[0].players[0]
+
+  it('stores a motion clamped to the field', () => {
+    install()
+
+    store.usePlaybook.getState().setPlayerMotion('motion-play', 'wr', [
+      { x: -30, y: 2 },
+      { x: 0, y: 40 },
+    ])
+
+    expect(player().motion?.points).toEqual([{ x: -1.4, y: 2 }, { x: 0, y: 17.4 }])
+    expect(player().route).toBeNull()
+  })
+
+  it('replaces and clears a motion without touching the route', () => {
+    install()
+    store.usePlaybook.getState().setPlayerRoute('motion-play', 'wr', [{ x: 0, y: 3 }])
+    store.usePlaybook.getState().setPlayerMotion('motion-play', 'wr', [{ x: 2, y: 0 }])
+    store.usePlaybook.getState().setPlayerMotion('motion-play', 'wr', [{ x: 3, y: 0 }])
+
+    expect(player().motion?.points).toEqual([{ x: 3, y: 0 }])
+    expect(player().route?.points).toEqual([{ x: 0, y: 3 }])
+
+    store.usePlaybook.getState().clearPlayerMotion('motion-play', 'wr')
+    expect(player().motion).toBeNull()
+    expect(player().route?.points).toEqual([{ x: 0, y: 3 }])
+  })
+
+  it('copies the motion and every option branch into a duplicated play', () => {
+    install()
+    store.usePlaybook.getState().setPlayerRoute('motion-play', 'wr', [
+      { x: 0, y: 3 },
+      { x: 4, y: 8 },
+    ])
+    store.usePlaybook.getState().addPlayerRouteOption('motion-play', 'wr', 1, [{ x: 8, y: 8 }])
+    store.usePlaybook.getState().setPlayerMotion('motion-play', 'wr', [{ x: 2, y: 0 }])
+
+    const source = player()
+    const copyId = store.usePlaybook.getState().duplicatePlay('motion-play')
+    const copy = store.usePlaybook
+      .getState()
+      .playbooks[0].plays.find((play) => play.id === copyId)
+
+    expect(copy?.players[0].motion?.points).toEqual([{ x: 2, y: 0 }])
+    expect(copy?.players[0].motion?.id).not.toBe(source.motion?.id)
+    expect(copy?.players[0].route?.options).toEqual([
+      { id: expect.any(String), from: 1, points: [{ x: 8, y: 8 }] },
+    ])
+    expect(copy?.players[0].route?.id).not.toBe(source.route?.id)
+    expect(copy?.players[0].route?.options?.[0].id).not.toBe(source.route?.options?.[0].id)
+  })
+
+  it('stores an option branch clamped to the field, only from a real route point', () => {
+    install()
+    store.usePlaybook.getState().setPlayerRoute('motion-play', 'wr', [
+      { x: 0, y: 3 },
+      { x: 4, y: 8 },
+    ])
+
+    store.usePlaybook.getState().addPlayerRouteOption('motion-play', 'wr', 1, [
+      { x: -30, y: 40 },
+    ])
+    // A branch needs a route point to leave from and at least one point of its own.
+    store.usePlaybook.getState().addPlayerRouteOption('motion-play', 'wr', 5, [{ x: 1, y: 1 }])
+    store.usePlaybook.getState().addPlayerRouteOption('motion-play', 'wr', -1, [{ x: 1, y: 1 }])
+    store.usePlaybook.getState().addPlayerRouteOption('motion-play', 'wr', 0, [])
+
+    expect(player().route?.options).toEqual([
+      { id: expect.any(String), from: 1, points: [{ x: -1.4, y: 17.4 }] },
+    ])
+  })
+
+  it('removes one branch without touching the route or the other branches', () => {
+    install()
+    store.usePlaybook.getState().setPlayerRoute('motion-play', 'wr', [
+      { x: 0, y: 3 },
+      { x: 4, y: 8 },
+    ])
+    store.usePlaybook.getState().addPlayerRouteOption('motion-play', 'wr', 0, [{ x: -4, y: 5 }])
+    store.usePlaybook.getState().addPlayerRouteOption('motion-play', 'wr', 1, [{ x: 8, y: 8 }])
+
+    const first = player().route?.options?.[0]
+    store.usePlaybook.getState().removePlayerRouteOption('motion-play', 'wr', first!.id)
+
+    expect(player().route?.points).toEqual([{ x: 0, y: 3 }, { x: 4, y: 8 }])
+    expect(player().route?.options).toEqual([
+      { id: expect.any(String), from: 1, points: [{ x: 8, y: 8 }] },
+    ])
+
+    store.usePlaybook
+      .getState()
+      .removePlayerRouteOption('motion-play', 'wr', player().route!.options![0].id)
+    expect(player().route?.options).toBeUndefined()
+    expect(player().route?.points).toHaveLength(2)
+  })
+
+  it('measures a hand-written route from where the motion ends', () => {
+    install()
+    // The receiver lines up on the left sideline and motions four yards inside.
+    store.usePlaybook.getState().setPlayerMotion('motion-play', 'wr', [{ x: 4, y: 0 }])
+    store.usePlaybook.getState().setPlayerRoute('motion-play', 'wr', [
+      { x: -30, y: 0 },
+      { x: 0, y: 3 },
+    ])
+
+    // Clamped around the end of the motion at x = -7, not the marker at x = -11.
+    expect(player().route?.points).toEqual([{ x: -5.4, y: 0 }, { x: 0, y: 3 }])
+  })
+
+  it('measures an option branch from where the motion ends', () => {
+    install()
+    store.usePlaybook.getState().setPlayerMotion('motion-play', 'wr', [{ x: 4, y: 0 }])
+    store.usePlaybook.getState().setPlayerRoute('motion-play', 'wr', [{ x: 0, y: 3 }])
+    store.usePlaybook.getState().addPlayerRouteOption('motion-play', 'wr', 0, [
+      { x: -20, y: 4 },
+    ])
+
+    expect(player().route?.options).toEqual([
+      { id: expect.any(String), from: 0, points: [{ x: -5.4, y: 4 }] },
+    ])
+  })
+
+  it('edits a branch in place, branch point and points together', () => {
+    install()
+    store.usePlaybook.getState().setPlayerRoute('motion-play', 'wr', [
+      { x: 0, y: 3 },
+      { x: 4, y: 8 },
+    ])
+    store.usePlaybook.getState().addPlayerRouteOption('motion-play', 'wr', 0, [{ x: -4, y: 4 }])
+    const option = player().route!.options![0]
+
+    store.usePlaybook.getState().updatePlayerRouteOption('motion-play', 'wr', option.id, 1, [
+      { x: 2, y: 9 },
+      { x: -30, y: 40 },
+    ])
+
+    expect(player().route?.points).toEqual([{ x: 0, y: 3 }, { x: 4, y: 8 }])
+    expect(player().route?.options).toEqual([
+      { id: option.id, from: 1, points: [{ x: 2, y: 9 }, { x: -1.4, y: 17.4 }] },
+    ])
+  })
+
+  it('drops a branch edited down to nothing and ignores edits it cannot make', () => {
+    install()
+    store.usePlaybook.getState().setPlayerRoute('motion-play', 'wr', [
+      { x: 0, y: 3 },
+      { x: 4, y: 8 },
+    ])
+    store.usePlaybook.getState().addPlayerRouteOption('motion-play', 'wr', 0, [{ x: -4, y: 4 }])
+    const option = player().route!.options![0]
+
+    // A branch can only leave a route point that exists.
+    store.usePlaybook
+      .getState()
+      .updatePlayerRouteOption('motion-play', 'wr', option.id, 2, [{ x: 1, y: 1 }])
+    expect(player().route?.options?.[0].from).toBe(0)
+
+    // An option that is not on the route is left alone.
+    store.usePlaybook
+      .getState()
+      .updatePlayerRouteOption('motion-play', 'wr', 'missing', 0, [{ x: 1, y: 1 }])
+    expect(player().route?.options).toHaveLength(1)
+
+    // With no points left there is nothing to run, so the branch goes.
+    store.usePlaybook.getState().updatePlayerRouteOption('motion-play', 'wr', option.id, 1, [])
+    expect(player().route?.options).toBeUndefined()
+    expect(player().route?.points).toHaveLength(2)
+  })
+
+  it('removes a route point and takes the branch that left it along', () => {
+    install()
+    store.usePlaybook.getState().setPlayerRoute('motion-play', 'wr', [
+      { x: 0, y: 3 },
+      { x: 2, y: 6 },
+      { x: 4, y: 9 },
+    ])
+    store.usePlaybook.getState().addPlayerRouteOption('motion-play', 'wr', 2, [{ x: 6, y: 10 }])
+    // The receiver is on the left sideline, so this branch is clamped there.
+    store.usePlaybook.getState().addPlayerRouteOption('motion-play', 'wr', 0, [{ x: -4, y: 4 }])
+
+    store.usePlaybook.getState().removePlayerRoutePoint('motion-play', 'wr', 2)
+
+    expect(player().route?.points).toEqual([{ x: 0, y: 3 }, { x: 2, y: 6 }])
+    expect(player().route?.options).toEqual([
+      { id: expect.any(String), from: 0, points: [{ x: -1.4, y: 4 }] },
+    ])
+  })
+
+  it('keeps a branch on its own point when an earlier route point goes', () => {
+    install()
+    store.usePlaybook.getState().setPlayerRoute('motion-play', 'wr', [
+      { x: 0, y: 3 },
+      { x: 2, y: 6 },
+      { x: 4, y: 9 },
+    ])
+    store.usePlaybook.getState().addPlayerRouteOption('motion-play', 'wr', 2, [{ x: 6, y: 10 }])
+
+    store.usePlaybook.getState().removePlayerRoutePoint('motion-play', 'wr', 1)
+
+    expect(player().route?.points).toEqual([{ x: 0, y: 3 }, { x: 4, y: 9 }])
+    // The branch still leaves the third point, which is now at index 1.
+    expect(player().route?.options).toEqual([
+      { id: expect.any(String), from: 1, points: [{ x: 6, y: 10 }] },
+    ])
+  })
+
+  it('clears a route whose last point goes and ignores an index that is not there', () => {
+    install()
+    store.usePlaybook.getState().setPlayerRoute('motion-play', 'wr', [{ x: 0, y: 3 }])
+
+    store.usePlaybook.getState().removePlayerRoutePoint('motion-play', 'wr', 4)
+    expect(player().route?.points).toEqual([{ x: 0, y: 3 }])
+
+    store.usePlaybook.getState().removePlayerRoutePoint('motion-play', 'wr', 0)
+    expect(player().route).toBeNull()
+  })
+
+  it('removes motion points and clears a motion that is emptied', () => {
+    install()
+    store.usePlaybook.getState().setPlayerMotion('motion-play', 'wr', [
+      { x: 2, y: 0 },
+      { x: 4, y: 1 },
+    ])
+
+    store.usePlaybook.getState().removePlayerMotionPoint('motion-play', 'wr', 0)
+    expect(player().motion?.points).toEqual([{ x: 4, y: 1 }])
+
+    store.usePlaybook.getState().removePlayerMotionPoint('motion-play', 'wr', 0)
+    expect(player().motion).toBeNull()
+  })
+
+  it('removes an option point and drops a branch left with none', () => {
+    install()
+    store.usePlaybook.getState().setPlayerRoute('motion-play', 'wr', [{ x: 0, y: 3 }])
+    store.usePlaybook.getState().addPlayerRouteOption('motion-play', 'wr', 0, [
+      { x: 2, y: 6 },
+      { x: 4, y: 9 },
+    ])
+    const option = player().route!.options![0]
+
+    store.usePlaybook.getState().removePlayerOptionPoint('motion-play', 'wr', option.id, 1)
+    expect(player().route?.options).toEqual([
+      { id: option.id, from: 0, points: [{ x: 2, y: 6 }] },
+    ])
+
+    store.usePlaybook.getState().removePlayerOptionPoint('motion-play', 'wr', option.id, 0)
+    expect(player().route?.options).toBeUndefined()
+    expect(player().route?.points).toEqual([{ x: 0, y: 3 }])
+  })
+
+  it('keeps branches within reach when the route changes and flips them with it', () => {
+    install()
+    store.usePlaybook.getState().setPlayerRoute('motion-play', 'wr', [
+      { x: 0, y: 3 },
+      { x: 2, y: 6 },
+      { x: 4, y: 9 },
+    ])
+    store.usePlaybook.getState().addPlayerRouteOption('motion-play', 'wr', 0, [{ x: -4, y: 4 }])
+    store.usePlaybook.getState().addPlayerRouteOption('motion-play', 'wr', 2, [{ x: 9, y: 9 }])
+
+    // Shortening the route drops the branch that pointed at the lost point.
+    store.usePlaybook.getState().setPlayerRoute('motion-play', 'wr', [
+      { x: 0, y: 3 },
+      { x: 2, y: 7 },
+    ])
+    // The receiver is on the left sideline, so the branch point is clamped there.
+    expect(player().route?.options).toEqual([
+      { id: expect.any(String), from: 0, points: [{ x: -1.4, y: 4 }] },
+    ])
+
+    store.usePlaybook.getState().flipPlayerRoute('motion-play', 'wr')
+    expect(player().route?.points).toEqual([{ x: 0, y: 3 }, { x: -2, y: 7 }])
+    expect(player().route?.options).toEqual([
+      { id: expect.any(String), from: 0, points: [{ x: 1.4, y: 4 }] },
+    ])
+  })
+
+  it('ignores an option for a player with no route', () => {
+    install()
+    store.usePlaybook.getState().addPlayerRouteOption('motion-play', 'wr', 0, [{ x: 1, y: 1 }])
+    expect(player().route).toBeNull()
+  })
+})

@@ -40,10 +40,35 @@ npm run build   # typecheck and production build
   again. Flipping a route mirrors it and a library route keeps the library's own
   shape; both are drawn inside the field edges while the play keeps their real
   coordinates, so flipping a route back — or re-applying the preset — returns
-  exactly what it was. The experimental **Sketch** mode turns a hand-drawn
-  stroke into the closest library route, or a freehand route when nothing fits.
+  exactly what it was. Drawing a route is click-to-place, and a double-click (or
+  Enter) finishes it — the point under the double-click is kept, and clicking
+  the point you just placed again ends the path there rather than stacking a
+  second one on it; Ctrl+Z steps back, dropping the point you just placed or
+  restoring the route from before its last edit, and **R** or **D** draws while
+  **M** moves players. A pre-snap **motion** is drawn the same way with the
+  Motion tool and shown **dashed**, and the route then starts where that motion
+  ends, so the shift and the route read as one movement. **Add option** (or
+  **O**) draws an alternative the receiver can break into: pick the route point
+  it leaves from, then place its points. A route can carry several options, all
+  drawn **dotted**, and each option has its own edit and remove buttons beside
+  the selected player: editing reworks its points and the route point it breaks
+  from, and removing every point drops it. A route and its options are measured
+  from the end of the motion, so moving the shift's last point carries the whole
+  route along instead of stretching its first segment. A route line or one of
+  its dotted options and its dashed motion are also click targets in Move mode,
+  which select that receiver just like the marker does, and every route, option
+  and motion point
+  can be dragged from there — dragging the motion's last point carries the route
+  with it — or removed with **Alt+click** on its handle. Removing a route point
+  takes an option branch that left that point with it, and moves the branches
+  after it up with their own point. No points left means no route, motion or
+  option. The experimental **Sketch** mode turns a
+  hand-drawn stroke into the closest library route, or a freehand route when
+  nothing fits.
 - **Wrist coach** — choose the card order, paper insert size, grid, margins and
-  ink options, then export a vector PDF at the exact insert dimensions.
+  ink options, then export a vector PDF at the exact insert dimensions. Motions and option routes keep their dashed
+  and dotted styles on the cards and in every diagram, and routes start from the
+  end of a motion there too.
 - **Route tree** — print a landscape or portrait numbered route tree (1–9 plus
   the 0 wheel) with a colour-coded route index. Field lines, the legend, title
   and monochrome mode are optional; monochrome uses solid, dashed and dotted
@@ -289,7 +314,10 @@ downfield.
 ```
 
 Route points take optional `curve` values; use a `lineup` entry to move a player
-or change their label, number or color for one play. The `routes` library is
+or change their label, number or color for one play. Route points are offsets
+from where the route starts, which is the player's alignment or — when that
+player has a pre-snap motion — the motion's last point. A motion and the route
+measured from it therefore move together as one picture. The `routes` library is
 optional when reading: older v2 backups without it open with the 18 starter
 routes. An empty array is preserved as an intentionally empty library.
 
@@ -302,7 +330,11 @@ that older readers cannot safely ignore, such as a new field size, must raise
 `minReaderVersion` so those readers refuse the file instead of silently losing
 data. Unknown fields are not preserved when a file is re-exported. Sketch and
 freehand routes use the ordinary route-point list, so they need no extra format
-fields. Older `snapbook.v1` backups still import unchanged. The format contract
+fields. A play's pre-snap motions travel in `motions`, keyed like `routes`, and
+each route's option branches in `optionRoutes` as a `from` route-point index
+plus their own points; both are additive, so an older reader opens the file and
+draws plain routes. Older `snapbook.v1` backups still import
+unchanged. The format contract
 is exercised by committed valid/golden fixtures in
 [src/lib/__tests__/fixtures/snapbook](src/lib/__tests__/fixtures/snapbook) plus
 contract, compatibility, malformed-input and seeded round-trip suites under
@@ -323,8 +355,36 @@ native Boost.Serialization reference. Formation, category and play names must
 be unique because PBC stores them as map keys; the exporter reports this before
 writing a file.
 
+The `.pbc` export writes routes with their bows, but it does not write motions
+and has no field for option branches, so those stay behind in a `.pbc` file and
+its routes begin at the player marker rather than at the end of a motion. The
+`.snapbook.json` backup keeps everything.
+
 Reading `.pbc` files back into Snapbook is not implemented. Use the
 `.snapbook.json` backup for round-tripping between Snapbook browsers.
+
+## Reminders
+
+Small things to pick up another time:
+
+- **The arrow at the end of a route looks like it sits behind the line.** A
+  route draws its path and then the arrowhead at the same endpoint, so the
+  round stroke cap and the arrow overlap and the finish reads oddly. The arrow
+  should sit on the end of the line without the line showing through it.
+- **Read `.pbc` files back in.** Importing a Playbook Creator file is not
+  implemented — the app turns the file away and points at the JSON backup —
+  while the export side is complete. It needs the AES-256-GCM container
+  opened, the Boost.Serialization text archive (version 19) parsed, and its
+  plays, formations and categories mapped into the Snapbook model, with the
+  same name-uniqueness rules the exporter enforces.
+- **Run a security review of the repository.** The Dropbox sign-in path has
+  been looked at — PKCE with no client secret, the OAuth `state` compared
+  against a sessionStorage record before the code is exchanged, the callback
+  query stripped from the URL afterwards, the access token in sessionStorage
+  and the refresh token in localStorage — and the source contains no HTML
+  injection sinks. Still to examine: the service worker's cache rules, the
+  import paths for untrusted `.snapbook.json` and `.pbc` files, dependencies,
+  the GitHub Actions workflow, and whether any secret ever reached git history.
 
 ## Stack
 

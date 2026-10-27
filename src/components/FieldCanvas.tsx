@@ -3,11 +3,18 @@ import {
   FIELD_HEIGHT,
   FIELD_WIDTH,
   LOS_FROM_TOP,
-  absolutePoint,
   clampPlayerPoint,
+  MOTION_DASH,
+  OPTION_ROUTE_DASH,
   clampRoutePointForPlayer,
   curveFromOffset,
   fieldRoutePoints,
+  isRepeatClick,
+  motionShape,
+  offsetPoint,
+  optionDraftShape,
+  optionShape,
+  routeOrigin,
   routeShape,
   segmentBowPoint,
   segmentOffset,
@@ -19,28 +26,64 @@ import {
 import { readableInk } from '../lib/color'
 import type { Play, Player, Point, RoutePoint } from '../types'
 
-type Tool = 'move' | 'route' | 'sketch'
+type Tool = 'move' | 'route' | 'sketch' | 'motion' | 'option'
 
 interface FieldCanvasProps {
   play: Play
   selectedId: string | null
   tool: Tool
   draft: RoutePoint[] | null
+  /** Pre-snap motion being drawn, shown dashed like a finished motion. */
+  motionDraft?: RoutePoint[] | null
+  /** Option branch being drawn, dotted from the route point it leaves. */
+  optionDraft?: RoutePoint[] | null
+  /** Route point index the option being drawn branches from. */
+  optionFrom?: number | null
   onSelect: (id: string | null) => void
   onMovePlayer: (id: string, pos: Point) => void
   onAddDraftPoint: (point: RoutePoint) => void
+  onAddMotionPoint?: (point: RoutePoint) => void
+  onAddOptionPoint?: (point: RoutePoint) => void
+  /** Picks the route point an option branches from. */
+  onPickOptionFrom?: (index: number) => void
   onSetRoutePoints: (playerId: string, points: RoutePoint[]) => void
+  /** Moves one option's points while its handles are dragged. */
+  onSetOptionPoints?: (
+    playerId: string,
+    optionId: string,
+    from: number,
+    points: RoutePoint[],
+  ) => void
+  /** Moves a pre-snap motion while its handles are dragged. */
+  onSetMotionPoints?: (playerId: string, points: RoutePoint[]) => void
+  /** Drops a route point, with the option branches that follow its index. */
+  onRemoveRoutePoint?: (playerId: string, index: number) => void
+  onRemoveMotionPoint?: (playerId: string, index: number) => void
+  onRemoveOptionPoint?: (playerId: string, optionId: string, index: number) => void
   onSketch: (points: Point[]) => void
+  /** Second quick click while drawing a route ends the route. */
+  onFinishDraft?: () => void
   /** Keeps the formation markers fixed while editing a standalone route. */
   lockPlayers?: boolean
   /** Shows a handle on each segment for dragging its bow. */
   curveHandles?: boolean
+  /** Option being reworked, drawn as its draft instead of twice over. */
+  hiddenOptionId?: string | null
 }
 
 type DragState =
   | { type: 'player'; playerId: string; offset: Point; pos: Point }
   | { type: 'route'; playerId: string; index: number; points: RoutePoint[] }
   | { type: 'curve'; playerId: string; index: number; points: RoutePoint[] }
+  | {
+      type: 'option'
+      playerId: string
+      optionId: string
+      from: number
+      index: number
+      points: RoutePoint[]
+    }
+  | { type: 'motion'; playerId: string; index: number; points: RoutePoint[] }
   | null
 
 const snapPoint = (point: Point, step = 0.5): Point => ({
@@ -51,24 +94,43 @@ const snapPoint = (point: Point, step = 0.5): Point => ({
 /** How close a double-click has to land to a bow handle to count as a hit. */
 const BOW_HANDLE_RADIUS = 0.6
 
+
+/** How wide the invisible click target drawn along a route is, in field yards. */
+const ROUTE_HIT_WIDTH = 1.1
+
 export function FieldCanvas({
   play,
   selectedId,
   tool,
   draft,
+  motionDraft = null,
+  optionDraft = null,
+  optionFrom = null,
   onSelect,
   onMovePlayer,
   onAddDraftPoint,
+  onAddMotionPoint,
+  onAddOptionPoint,
+  onPickOptionFrom,
   onSetRoutePoints,
+  onSetOptionPoints,
+  onSetMotionPoints,
+  onRemoveRoutePoint,
+  onRemoveMotionPoint,
+  onRemoveOptionPoint,
   onSketch,
+  onFinishDraft,
   lockPlayers = false,
   curveHandles = false,
+  hiddenOptionId = null,
 }: FieldCanvasProps) {
   const svgRef = useRef<SVGSVGElement>(null)
   const [drag, setDrag] = useState<DragState>(null)
   const [cursor, setCursor] = useState<Point | null>(null)
   const [sketch, setSketch] = useState<Point[] | null>(null)
   const sketchRef = useRef<Point[] | null>(null)
+  /** When a path was finished by a double-click, so it only does that. */
+  const finishedAt = useRef(0)
 
   useEffect(() => {
     if (tool === 'sketch') return
@@ -77,6 +139,35 @@ export function FieldCanvas({
   }, [tool])
 
   const selectedPlayer = play.players.find((player) => player.id === selectedId) ?? null
+
+  /** A drawn path is as clickable as the marker it belongs to, in move mode. */
+  const selectable = tool === 'move'
+  const selectRoute = (event: React.PointerEvent, player: Player) => {
+    event.stopPropagation()
+    onSelect(player.id)
+  }
+
+  /**
+   * An invisible click target laid over a drawn path, wide enough to hit with a
+   * thumb. Selecting a route, one of its options or a motion all pick out the
+   * receiver that runs it, exactly like clicking the marker does.
+   */
+  const hitPath = (player: Player, d: string, what: string, key: string) => (
+    <path
+      key={key}
+      d={d}
+      fill="none"
+      stroke="transparent"
+      strokeWidth={ROUTE_HIT_WIDTH}
+      pointerEvents="stroke"
+      style={{ cursor: 'pointer' }}
+      onPointerDown={(event) => selectRoute(event, player)}
+    >
+      <title>
+        Select {player.label}&apos;s {what}
+      </title>
+    </path>
+  )
 
   const displayPlayers = useMemo(() => {
     if (drag?.type === 'player') {
@@ -88,6 +179,28 @@ export function FieldCanvas({
       return play.players.map((player) =>
         player.id === drag.playerId && player.route
           ? { ...player, route: { ...player.route, points: drag.points } }
+          : player,
+      )
+    }
+    if (drag?.type === 'motion') {
+      return play.players.map((player) =>
+        player.id === drag.playerId
+          ? { ...player, motion: { id: player.motion?.id ?? 'motion', points: drag.points } }
+          : player,
+      )
+    }
+    if (drag?.type === 'option') {
+      return play.players.map((player) =>
+        player.id === drag.playerId && player.route?.options
+          ? {
+              ...player,
+              route: {
+                ...player.route,
+                options: player.route.options.map((option) =>
+                  option.id === drag.optionId ? { ...option, points: drag.points } : option,
+                ),
+              },
+            }
           : player,
       )
     }
@@ -104,10 +217,63 @@ export function FieldCanvas({
     })
   }
 
+  /**
+   * A clicked position stored as an offset from the origin it belongs to: a
+   * motion is measured from the alignment, a route and its options from
+   * wherever the motion leaves the player.
+   */
+  const relativePoint = (point: Point, origin: Point): RoutePoint =>
+    clampRoutePointForPlayer(origin, {
+      x: Number((point.x - origin.x).toFixed(2)),
+      y: Number((point.y - origin.y).toFixed(2)),
+    })
+
+  /** A player's route as drawn: its origin plus the points measured from it. */
+  const routeFrame = (player: Player) => {
+    const origin = routeOrigin(player)
+    return { origin, points: fieldRoutePoints(origin, player.route?.points ?? []) }
+  }
+
+  /**
+   * True when a click is the second half of a double-click, which finishes the
+   * path being drawn. The first half placed the point under the double-click;
+   * the second half lands in the same spot, so both halves end up as one point
+   * instead of two on top of each other.
+   */
+  const isFinishingClick = (relative: RoutePoint, last?: RoutePoint | null) =>
+    Boolean(onFinishDraft) && isRepeatClick(relative, last)
+
+  /** Ends the path being drawn, and keeps the double-click to just that. */
+  const finishFromClick = () => {
+    finishedAt.current = Date.now()
+    onFinishDraft?.()
+  }
+
   const handleBackgroundDown = (event: React.PointerEvent<SVGSVGElement>) => {
     if (event.button !== 0) return
     const point = fieldPoint(event)
     if (!point) return
+    if (tool === 'motion' && selectedPlayer && onAddMotionPoint) {
+      const relative = relativePoint(point, selectedPlayer.pos)
+      if (isFinishingClick(relative, motionDraft?.[motionDraft.length - 1])) {
+        finishFromClick()
+        return
+      }
+      onAddMotionPoint(relative)
+      return
+    }
+    if (tool === 'option' && selectedPlayer?.route && onAddOptionPoint) {
+      // The branch has to come from a route point, so clicks only extend the
+      // option once one has been picked on the field.
+      if (optionFrom === null) return
+      const relative = relativePoint(point, routeOrigin(selectedPlayer))
+      if (isFinishingClick(relative, optionDraft?.[optionDraft.length - 1])) {
+        finishFromClick()
+        return
+      }
+      onAddOptionPoint(relative)
+      return
+    }
     if (tool === 'sketch') {
       try {
         svgRef.current?.setPointerCapture(event.pointerId)
@@ -119,10 +285,11 @@ export function FieldCanvas({
       return
     }
     if (tool === 'route' && selectedPlayer) {
-      const relative = clampRoutePointForPlayer(selectedPlayer.pos, {
-        x: Number((point.x - selectedPlayer.pos.x).toFixed(2)),
-        y: Number((point.y - selectedPlayer.pos.y).toFixed(2)),
-      })
+      const relative = relativePoint(point, routeOrigin(selectedPlayer))
+      if (isFinishingClick(relative, draft?.[draft.length - 1])) {
+        finishFromClick()
+        return
+      }
       onAddDraftPoint(relative)
       return
     }
@@ -153,6 +320,45 @@ export function FieldCanvas({
     })
   }
 
+  const removeRoutePoint = (player: Player, index: number) => {
+    if (onRemoveRoutePoint) {
+      onRemoveRoutePoint(player.id, index)
+      return
+    }
+    onSetRoutePoints(
+      player.id,
+      routeFrame(player).points.filter((_, position) => position !== index),
+    )
+  }
+
+  const removeMotionPoint = (player: Player, index: number) => {
+    const motion = player.motion
+    if (!motion) return
+    if (onRemoveMotionPoint) {
+      onRemoveMotionPoint(player.id, index)
+      return
+    }
+    onSetMotionPoints?.(
+      player.id,
+      fieldRoutePoints(player.pos, motion.points).filter((_, position) => position !== index),
+    )
+  }
+
+  const removeOptionPoint = (player: Player, optionId: string, index: number) => {
+    const option = player.route?.options?.find((item) => item.id === optionId)
+    if (!option) return
+    if (onRemoveOptionPoint) {
+      onRemoveOptionPoint(player.id, optionId, index)
+      return
+    }
+    onSetOptionPoints?.(
+      player.id,
+      optionId,
+      option.from,
+      option.points.filter((_, position) => position !== index),
+    )
+  }
+
   const beginHandleDrag = (
     event: React.PointerEvent,
     player: Player,
@@ -160,19 +366,19 @@ export function FieldCanvas({
   ) => {
     if (!player.route || event.button !== 0) return
     event.stopPropagation()
+    // Alt+click drops the point instead of picking it up.
+    if (event.altKey) {
+      removeRoutePoint(player, index)
+      return
+    }
     capturePointer(event)
-    setDrag({
-      type: 'route',
-      playerId: player.id,
-      index,
-      points: fieldRoutePoints(player.pos, player.route.points),
-    })
+    setDrag({ type: 'route', playerId: player.id, index, points: routeFrame(player).points })
   }
 
   /** Segment ending at `index`, in absolute field coordinates. */
-  const segmentOf = (player: Player, points: RoutePoint[], index: number) => ({
-    from: index === 0 ? player.pos : absolutePoint(player, points[index - 1]),
-    to: absolutePoint(player, points[index]),
+  const segmentOf = (origin: Point, points: RoutePoint[], index: number) => ({
+    from: index === 0 ? origin : offsetPoint(origin, points[index - 1]),
+    to: offsetPoint(origin, points[index]),
   })
 
   const beginCurveDrag = (
@@ -183,19 +389,58 @@ export function FieldCanvas({
     if (!player.route || event.button !== 0) return
     event.stopPropagation()
     capturePointer(event)
+    setDrag({ type: 'curve', playerId: player.id, index, points: routeFrame(player).points })
+  }
+
+  const beginMotionDrag = (event: React.PointerEvent, player: Player, index: number) => {
+    const motion = player.motion
+    if (!motion || event.button !== 0) return
+    event.stopPropagation()
+    if (event.altKey) {
+      removeMotionPoint(player, index)
+      return
+    }
+    capturePointer(event)
     setDrag({
-      type: 'curve',
+      type: 'motion',
       playerId: player.id,
       index,
-      points: fieldRoutePoints(player.pos, player.route.points),
+      points: fieldRoutePoints(player.pos, motion.points),
+    })
+  }
+
+  const beginOptionDrag = (
+    event: React.PointerEvent,
+    player: Player,
+    optionId: string,
+    from: number,
+    index: number,
+  ) => {
+    if (event.button !== 0) return
+    const option = player.route?.options?.find((item) => item.id === optionId)
+    if (!option) return
+    event.stopPropagation()
+    if (event.altKey) {
+      removeOptionPoint(player, optionId, index)
+      return
+    }
+    capturePointer(event)
+    setDrag({
+      type: 'option',
+      playerId: player.id,
+      optionId,
+      from,
+      index,
+      points: option.points.map((point) => ({ ...point })),
     })
   }
 
   const straightenSegment = (player: Player, index: number) => {
     if (!player.route) return
+    const origin = routeOrigin(player)
     onSetRoutePoints(
       player.id,
-      fieldRoutePoints(player.pos, player.route.points).map((point, position) =>
+      fieldRoutePoints(origin, player.route.points).map((point, position) =>
         position === index ? withCurve(point, 0) : point,
       ),
     )
@@ -208,12 +453,15 @@ export function FieldCanvas({
    */
   const handleFieldDoubleClick = (event: React.MouseEvent<SVGSVGElement>) => {
     if (!curveHandles || tool !== 'move') return
+    // The double-click that finished a route just placed its last point; it is
+    // not also a request to straighten whatever bow sits under it.
+    if (Date.now() - finishedAt.current < 600) return
     const point = fieldPoint(event)
     const player = displayPlayers.find((item) => item.id === selectedId)
     if (!point || !player?.route) return
-    const points = fieldRoutePoints(player.pos, player.route.points)
+    const { origin, points } = routeFrame(player)
     for (let index = points.length - 1; index >= 0; index -= 1) {
-      const { from, to } = segmentOf(player, points, index)
+      const { from, to } = segmentOf(origin, points, index)
       const bow = segmentBowPoint(from, to, points[index].curve)
       if (Math.hypot(point.x - bow.x, point.y - bow.y) <= BOW_HANDLE_RADIUS) {
         straightenSegment(player, index)
@@ -249,9 +497,10 @@ export function FieldCanvas({
     if (drag.type === 'route') {
       const player = play.players.find((item) => item.id === drag.playerId)
       if (!player) return
+      const origin = routeOrigin(player)
       const next = clampRoutePointForPlayer(
-        player.pos,
-        snapPoint({ x: point.x - player.pos.x, y: point.y - player.pos.y }),
+        origin,
+        snapPoint({ x: point.x - origin.x, y: point.y - origin.y }),
       )
       const points = drag.points.map((routePoint, index) =>
         index === drag.index ? { ...routePoint, ...next } : routePoint,
@@ -262,10 +511,39 @@ export function FieldCanvas({
     if (drag.type === 'curve') {
       const player = play.players.find((item) => item.id === drag.playerId)
       if (!player) return
-      const { from, to } = segmentOf(player, drag.points, drag.index)
+      const { from, to } = segmentOf(routeOrigin(player), drag.points, drag.index)
       const curve = curveFromOffset(segmentOffset(from, to, point))
       const points = drag.points.map((routePoint, index) =>
         index === drag.index ? withCurve(routePoint, curve) : routePoint,
+      )
+      setDrag({ ...drag, points })
+      return
+    }
+    if (drag.type === 'motion') {
+      const player = play.players.find((item) => item.id === drag.playerId)
+      if (!player) return
+      // A motion is measured from the alignment, so its first point is the
+      // shift's start and its last one is where the route begins.
+      const next = clampRoutePointForPlayer(
+        player.pos,
+        snapPoint({ x: point.x - player.pos.x, y: point.y - player.pos.y }),
+      )
+      const points = drag.points.map((routePoint, index) =>
+        index === drag.index ? { ...routePoint, ...next } : routePoint,
+      )
+      setDrag({ ...drag, points })
+      return
+    }
+    if (drag.type === 'option') {
+      const player = play.players.find((item) => item.id === drag.playerId)
+      if (!player) return
+      const origin = routeOrigin(player)
+      const next = clampRoutePointForPlayer(
+        origin,
+        snapPoint({ x: point.x - origin.x, y: point.y - origin.y }),
+      )
+      const points = drag.points.map((routePoint, index) =>
+        index === drag.index ? { ...routePoint, ...next } : routePoint,
       )
       setDrag({ ...drag, points })
     }
@@ -280,32 +558,74 @@ export function FieldCanvas({
     if (drag?.type === 'route' || drag?.type === 'curve') {
       onSetRoutePoints(drag.playerId, drag.points)
     }
+    if (drag?.type === 'option') {
+      onSetOptionPoints?.(drag.playerId, drag.optionId, drag.from, drag.points)
+    }
+    if (drag?.type === 'motion') {
+      onSetMotionPoints?.(drag.playerId, drag.points)
+    }
     setDrag(null)
   }
 
-  const draftShape = useMemo(() => {
-    if (!selectedPlayer || draft === null) return null
-    return routeShape(selectedPlayer, { id: 'draft', points: draft })
-  }, [selectedPlayer, draft])
+  /**
+   * The selected player as the field currently shows them. While a motion is
+   * being drawn the route is measured from the motion's last point, so the
+   * whole route moves with the shift rather than waiting for it to be finished.
+   */
+  const previewPlayer = useMemo(() => {
+    if (!selectedPlayer || motionDraft === null) return selectedPlayer
+    return { ...selectedPlayer, motion: { id: 'motion-draft', points: motionDraft } }
+  }, [selectedPlayer, motionDraft])
 
-  const draftAnchor = useMemo(() => {
-    if (!selectedPlayer || draft === null) return null
-    if (draft.length) {
-      const last = draft[draft.length - 1]
-      return {
-        x: selectedPlayer.pos.x + last.x,
-        y: selectedPlayer.pos.y + last.y,
-      }
+  /**
+   * The path being drawn. A motion is measured from the player's alignment, so
+   * it grows from the marker; a route and its options are measured from the
+   * end of the motion.
+   */
+  const draftShape = useMemo(() => {
+    if (!previewPlayer) return null
+    if (motionDraft !== null) {
+      return motionShape(previewPlayer, { id: 'draft', points: motionDraft })
     }
-    return selectedPlayer.pos
-  }, [selectedPlayer, draft])
+    if (draft === null) return null
+    return routeShape(previewPlayer, { id: 'draft', points: draft })
+  }, [previewPlayer, draft, motionDraft])
+
+  const optionPreview = useMemo(() => {
+    if (!previewPlayer?.route || optionDraft === null || optionFrom === null) return null
+    return optionDraftShape(previewPlayer, previewPlayer.route, optionFrom, optionDraft)
+  }, [previewPlayer, optionDraft, optionFrom])
+
+  /** Where the rubber-band line to the cursor starts, or null with no preview. */
+  const draftAnchor = useMemo(() => {
+    if (!previewPlayer) return null
+    if (optionDraft !== null) {
+      if (optionFrom === null || !previewPlayer.route) return null
+      const origin = routeOrigin(previewPlayer)
+      const branch = fieldRoutePoints(origin, previewPlayer.route.points)[optionFrom]
+      if (!branch) return null
+      const anchor = offsetPoint(origin, branch)
+      const last = optionDraft[optionDraft.length - 1]
+      return last ? offsetPoint(origin, last) : anchor
+    }
+    if (motionDraft !== null) {
+      const last = motionDraft[motionDraft.length - 1]
+      return last ? offsetPoint(previewPlayer.pos, last) : previewPlayer.pos
+    }
+    if (draft === null) return null
+    const origin = routeOrigin(previewPlayer)
+    const last = draft[draft.length - 1]
+    return last ? offsetPoint(origin, last) : origin
+  }, [previewPlayer, draft, motionDraft, optionDraft, optionFrom])
 
   return (
     <svg
       ref={svgRef}
       viewBox={`0 0 ${FIELD_WIDTH} ${FIELD_HEIGHT}`}
       className="block h-full w-full touch-none select-none"
-      style={{ cursor: tool === 'route' || tool === 'sketch' ? 'crosshair' : 'default' }}
+      style={{
+        cursor: tool === 'route' || tool === 'sketch' || tool === 'motion' ? 'crosshair' : 'default',
+      }}
       onPointerDown={handleBackgroundDown}
       onPointerMove={handlePointerMove}
       onPointerUp={finishDrag}
@@ -414,21 +734,80 @@ export function FieldCanvas({
 
       <g>
         {displayPlayers.map((player) => {
-          if (!player.route) return null
-          if (player.id === selectedId && draft !== null) return null
-          const shape = routeShape(player, player.route)
+          if (!player.motion?.points.length) return null
+          if (player.id === selectedId && motionDraft !== null) return null
+          const shape = motionShape(player, player.motion)
           if (!shape) return null
           return (
-            <g key={`route-${player.id}`}>
+            <g key={`motion-${player.id}`}>
               <path
                 d={shape.d}
                 fill="none"
                 stroke={player.color}
-                strokeWidth={0.28}
+                strokeWidth={0.2}
+                strokeOpacity={0.85}
                 strokeLinecap="round"
                 strokeLinejoin="round"
+                strokeDasharray={MOTION_DASH}
               />
-              <polygon points={shape.arrow} fill={player.color} />
+              <polygon points={shape.arrow} fill={player.color} opacity={0.85} />
+              {selectable && hitPath(player, shape.d, 'motion', `hit-motion-${player.id}`)}
+            </g>
+          )
+        })}
+      </g>
+
+      <g>
+        {displayPlayers.map((player) => {
+          if (!player.route) return null
+          if (player.id === selectedId && draft !== null) return null
+          // A motion being drawn carries this player's route along with it.
+          const shaped =
+            player.id === selectedId && previewPlayer && motionDraft !== null
+              ? { ...player, motion: previewPlayer.motion }
+              : player
+          const shape = routeShape(shaped, player.route)
+          const branches = (player.route.options ?? []).flatMap((option) => {
+            // The branch being edited shows as its draft instead of twice over.
+            if (option.id === hiddenOptionId) return []
+            const branch = optionShape(shaped, player.route!, option)
+            return branch ? [branch] : []
+          })
+          if (!shape && !branches.length) return null
+          return (
+            <g key={`route-${player.id}`}>
+              {shape && (
+                <>
+                  <path
+                    d={shape.d}
+                    fill="none"
+                    stroke={player.color}
+                    strokeWidth={0.28}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                  <polygon points={shape.arrow} fill={player.color} />
+                </>
+              )}
+              {branches.map((branch, index) => (
+                <g key={`option-${player.id}-${index}`}>
+                  <path
+                    d={branch.d}
+                    fill="none"
+                    stroke={player.color}
+                    strokeWidth={0.24}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeDasharray={OPTION_ROUTE_DASH}
+                  />
+                  <polygon points={branch.arrow} fill={player.color} opacity={0.9} />
+                </g>
+              ))}
+              {selectable && shape && hitPath(player, shape.d, 'route', `hit-route-${player.id}`)}
+              {selectable &&
+                branches.map((branch, index) =>
+                  hitPath(player, branch.d, 'option', `hit-option-${player.id}-${index}`),
+                )}
             </g>
           )
         })}
@@ -439,14 +818,26 @@ export function FieldCanvas({
           d={draftShape.d}
           fill="none"
           stroke={selectedPlayer?.color ?? '#d8ff63'}
-          strokeWidth={0.28}
+          strokeWidth={draft !== null ? 0.28 : 0.2}
           strokeLinecap="round"
           strokeLinejoin="round"
-          strokeDasharray="0.35 0.18"
+          strokeDasharray={draft !== null ? '0.35 0.18' : MOTION_DASH}
         />
       )}
 
-      {tool === 'route' && draftAnchor && cursor && (
+      {optionPreview && (
+        <path
+          d={optionPreview.d}
+          fill="none"
+          stroke={selectedPlayer?.color ?? '#d8ff63'}
+          strokeWidth={0.24}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeDasharray={OPTION_ROUTE_DASH}
+        />
+      )}
+
+      {(tool === 'route' || tool === 'motion' || tool === 'option') && draftAnchor && cursor && (
         <g pointerEvents="none">
           <line
             x1={draftAnchor.x + FIELD_WIDTH / 2}
@@ -504,7 +895,7 @@ export function FieldCanvas({
               key={player.id}
               onPointerDown={(event) => beginPlayerDrag(event, player)}
               style={{ cursor: lockPlayers ? 'default' : tool === 'move' ? 'grab' : 'crosshair' }}
-              pointerEvents={tool === 'route' || tool === 'sketch' ? 'none' : 'auto'}
+              pointerEvents={tool === 'move' ? 'auto' : 'none'}
             >
               {isSelected && (
                 <circle
@@ -558,13 +949,46 @@ export function FieldCanvas({
         })}
       </g>
 
+      {tool === 'option' &&
+        (() => {
+          const player = displayPlayers.find((item) => item.id === selectedId)
+          if (!player?.route) return null
+          const { origin, points } = routeFrame(player)
+          return points.map((point, index) => {
+            const absolute = offsetPoint(origin, point)
+            const x = absolute.x + FIELD_WIDTH / 2
+            const y = LOS_FROM_TOP - absolute.y
+            const picked = index === optionFrom
+            return (
+              <circle
+                key={`branch-${index}`}
+                cx={x}
+                cy={y}
+                r={picked ? 0.3 : 0.23}
+                fill={picked ? '#d8ff63' : '#0a100c'}
+                stroke="#d8ff63"
+                strokeWidth={0.07}
+                style={{ cursor: 'pointer' }}
+                onPointerDown={(event) => {
+                  event.stopPropagation()
+                  onPickOptionFrom?.(index)
+                }}
+              >
+                <title>Branch an option from this route point</title>
+              </circle>
+            )
+          })
+        })()}
+
       {tool === 'move' &&
         (() => {
           const player = displayPlayers.find((item) => item.id === selectedId)
           if (!player?.route) return null
-          return fieldRoutePoints(player.pos, player.route.points).map((point, index) => {
-            const x = player.pos.x + point.x + FIELD_WIDTH / 2
-            const y = LOS_FROM_TOP - (player.pos.y + point.y)
+          const { origin, points } = routeFrame(player)
+          return points.map((point, index) => {
+            const absolute = offsetPoint(origin, point)
+            const x = absolute.x + FIELD_WIDTH / 2
+            const y = LOS_FROM_TOP - absolute.y
             return (
               <circle
                 key={`handle-${index}`}
@@ -576,9 +1000,71 @@ export function FieldCanvas({
                 strokeWidth={0.07}
                 style={{ cursor: 'grab' }}
                 onPointerDown={(event) => beginHandleDrag(event, player, index)}
-              />
+              >
+                <title>Drag to move this route point · Alt+click removes it</title>
+              </circle>
             )
           })
+        })()}
+
+      {onSetMotionPoints &&
+        tool === 'move' &&
+        (() => {
+          const player = displayPlayers.find((item) => item.id === selectedId)
+          if (!player?.motion?.points.length) return null
+          return fieldRoutePoints(player.pos, player.motion.points).map((point, index) => {
+            const absolute = offsetPoint(player.pos, point)
+            return (
+              <circle
+                key={`motion-handle-${index}`}
+                cx={absolute.x + FIELD_WIDTH / 2}
+                cy={LOS_FROM_TOP - absolute.y}
+                r={0.2}
+                fill="#0a100c"
+                stroke="#d8ff63"
+                strokeWidth={0.06}
+                strokeDasharray="0.14 0.1"
+                style={{ cursor: 'grab' }}
+                onPointerDown={(event) => beginMotionDrag(event, player, index)}
+              >
+                <title>
+                  {index === player.motion!.points.length - 1
+                    ? 'Drag the last motion point · the route moves with it · Alt+click removes it'
+                    : 'Drag to move this motion point · Alt+click removes it'}
+                </title>
+              </circle>
+            )
+          })
+        })()}
+
+      {onSetOptionPoints &&
+        tool === 'move' &&
+        (() => {
+          const player = displayPlayers.find((item) => item.id === selectedId)
+          if (!player?.route?.options?.length) return null
+          const { origin } = routeFrame(player)
+          return player.route.options.flatMap((option) =>
+            option.points.map((point, index) => {
+              const absolute = offsetPoint(origin, point)
+              return (
+                <circle
+                  key={`option-handle-${option.id}-${index}`}
+                  cx={absolute.x + FIELD_WIDTH / 2}
+                  cy={LOS_FROM_TOP - absolute.y}
+                  r={0.19}
+                  fill="#0a100c"
+                  stroke="#d8ff63"
+                  strokeWidth={0.06}
+                  style={{ cursor: 'grab' }}
+                  onPointerDown={(event) =>
+                    beginOptionDrag(event, player, option.id, option.from, index)
+                  }
+                >
+                  <title>Drag to move this option point · Alt+click removes it</title>
+                </circle>
+              )
+            }),
+          )
         })()}
 
       {curveHandles &&
@@ -586,9 +1072,9 @@ export function FieldCanvas({
         (() => {
           const player = displayPlayers.find((item) => item.id === selectedId)
           if (!player?.route?.points.length) return null
-          const points = fieldRoutePoints(player.pos, player.route.points)
+          const { origin, points } = routeFrame(player)
           return points.map((point, index) => {
-            const { from, to } = segmentOf(player, points, index)
+            const { from, to } = segmentOf(origin, points, index)
             const bow = toSvg(segmentBowPoint(from, to, point.curve))
             return (
               <circle

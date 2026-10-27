@@ -10,9 +10,29 @@ export interface RoutePoint extends Point {
   curve?: number
 }
 
+/**
+ * An alternative a receiver can break into instead of finishing the route,
+ * drawn dotted. It leaves the route at one of the route's own points.
+ */
+export interface RouteOption {
+  id: string
+  /** Index into the route's points that this option branches from. */
+  from: number
+  /** Points after the branch, relative to the player's alignment. */
+  points: RoutePoint[]
+}
+
 export interface Route {
   id: string
   /** Points are relative to the player's alignment. */
+  points: RoutePoint[]
+  /** Alternatives the receiver can break into, dotted on every diagram. */
+  options?: RouteOption[]
+}
+
+/** A pre-snap movement, drawn dashed and relative to the player's alignment. */
+export interface Motion {
+  id: string
   points: RoutePoint[]
 }
 
@@ -26,6 +46,8 @@ export interface Player {
   color: string
   pos: Point
   route: Route | null
+  /** Where the player shifts before the snap, if anywhere. */
+  motion?: Motion | null
 }
 
 export interface Formation {

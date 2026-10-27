@@ -112,6 +112,93 @@ describe('Snapbook round-trip stability', () => {
     expect(semantics(restored)).toEqual(semantics(book))
   })
 
+  it('round-trips pre-snap motions and option branches', () => {
+    const spread = formation('Shift', [player({ label: 'WR' }), player({ label: 'QB' })])
+    const book = playbook({
+      formations: [spread],
+      plays: [
+        play('Shift', spread.id, [
+          {
+            ...spread.players[0],
+            route: {
+              id: 'route',
+              points: [point(0, 3), point(4, 5, 0.5)],
+              options: [
+                { id: 'option-1', from: 1, points: [point(8, 6), point(10, 9, 0.75)] },
+                { id: 'option-2', from: 0, points: [point(-3, 4)] },
+              ],
+            },
+            motion: { id: 'motion', points: [point(-4, 0)] },
+          },
+          { ...spread.players[1], motion: { id: 'motion-qb', points: [point(1, 0, 0.5)] } },
+        ]),
+      ],
+    })
+
+    const text = serializeSnapbook(book, exportedAt)
+    const file = JSON.parse(text) as {
+      playbook: {
+        plays: Array<{ motions: Record<string, unknown>; optionRoutes: Record<string, unknown> }>
+      }
+    }
+    expect(file.playbook.plays[0].motions).toEqual({
+      WR: [{ x: -4, y: 0 }],
+      QB: [{ x: 1, y: 0, curve: 0.5 }],
+    })
+    // The branch is anchored to a route point, so both the index and its own
+    // points travel with the route.
+    expect(file.playbook.plays[0].optionRoutes).toEqual({
+      WR: [
+        { from: 1, points: [{ x: 8, y: 6 }, { x: 10, y: 9, curve: 0.75 }] },
+        { from: 0, points: [{ x: -3, y: 4 }] },
+      ],
+    })
+
+    const restored = parseSnapbook(text)
+    expect(semantics(restored)).toEqual(semantics(book))
+    expect(restored.plays[0].players[0].route?.options).toEqual([
+      { id: expect.any(String), from: 1, points: [{ x: 8, y: 6 }, { x: 10, y: 9, curve: 0.75 }] },
+      { id: expect.any(String), from: 0, points: [{ x: -3, y: 4 }] },
+    ])
+    expect(restored.plays[0].players[0].motion?.points).toEqual([{ x: -4, y: 0 }])
+    expect(serializeSnapbook(restored, exportedAt)).toBe(text)
+  })
+
+  it('drops a branch that no longer has a route point to leave from', () => {
+    // A branch beyond the route's points cannot be anchored; the route itself
+    // still exports, so the file stays readable.
+    const spread = formation('Short', [player({ label: 'WR' })])
+    const book = playbook({
+      formations: [spread],
+      plays: [
+        play('Short', spread.id, [
+          {
+            ...spread.players[0],
+            route: {
+              id: 'route',
+              points: [point(0, 3)],
+              options: [
+                { id: 'ok', from: 0, points: [point(4, 4)] },
+                { id: 'gone', from: 3, points: [point(9, 9)] },
+              ],
+            },
+          },
+        ]),
+      ],
+    })
+
+    const text = serializeSnapbook(book, exportedAt)
+    const file = JSON.parse(text) as {
+      playbook: { plays: Array<{ optionRoutes: Record<string, unknown> }> }
+    }
+    expect(file.playbook.plays[0].optionRoutes).toEqual({
+      WR: [{ from: 0, points: [{ x: 4, y: 4 }] }],
+    })
+    expect(
+      parseSnapbook(text).plays[0].players[0].route?.options?.map((option) => option.from),
+    ).toEqual([0])
+  })
+
   it('renames duplicate and blank identifiers consistently on every export', () => {
     const spread = formation('  Spread  ', [player({ label: 'WR' })])
     const duplicate = formation('spread', [player({ label: 'WR' })])

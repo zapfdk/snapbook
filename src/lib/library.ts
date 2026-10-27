@@ -278,7 +278,22 @@ export function clonePlaybook(source: Playbook, name: string): Playbook {
         id: createId(),
         pos: { ...player.pos },
         route: player.route
-          ? { id: createId(), points: player.route.points.map((point) => ({ ...point })) }
+          ? {
+              id: createId(),
+              points: player.route.points.map((point) => ({ ...point })),
+              ...(player.route.options?.length
+                ? {
+                    options: player.route.options.map((option) => ({
+                      id: createId(),
+                      from: option.from,
+                      points: option.points.map((point) => ({ ...point })),
+                    })),
+                  }
+                : {}),
+            }
+          : null,
+        motion: player.motion
+          ? { id: createId(), points: player.motion.points.map((point) => ({ ...point })) }
           : null,
       })),
       createdAt: stamp,

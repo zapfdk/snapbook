@@ -6,8 +6,10 @@ import {
   CornerDownLeft,
   Eraser,
   FlipHorizontal2,
+  GitBranch,
   Layers,
   MousePointer2,
+  MoveRight,
   PenLine,
   Plus,
   Save,
@@ -32,11 +34,17 @@ import {
   polylineLength,
   simplifyFreehandRoute,
 } from '../lib/playRecognition'
-import type { Play, Point, RoutePoint } from '../types'
+import type { Play, Point, RouteOption, RoutePoint } from '../types'
 
 type SketchStatus = {
   tone: 'match' | 'freehand' | 'miss'
   text: string
+}
+
+/** A route as it was before an edit, so the edit can be taken back. */
+type RouteUndoEntry = {
+  playerId: string
+  points: RoutePoint[] | null
 }
 
 interface DesignViewProps {
@@ -49,6 +57,14 @@ export function DesignView({ play, onBack }: DesignViewProps) {
   const updatePlayer = usePlaybook((state) => state.updatePlayer)
   const movePlayer = usePlaybook((state) => state.movePlayer)
   const setPlayerRoute = usePlaybook((state) => state.setPlayerRoute)
+  const addPlayerRouteOption = usePlaybook((state) => state.addPlayerRouteOption)
+  const updatePlayerRouteOption = usePlaybook((state) => state.updatePlayerRouteOption)
+  const removePlayerRouteOption = usePlaybook((state) => state.removePlayerRouteOption)
+  const removePlayerRoutePoint = usePlaybook((state) => state.removePlayerRoutePoint)
+  const removePlayerOptionPoint = usePlaybook((state) => state.removePlayerOptionPoint)
+  const removePlayerMotionPoint = usePlaybook((state) => state.removePlayerMotionPoint)
+  const setPlayerMotion = usePlaybook((state) => state.setPlayerMotion)
+  const clearPlayerMotion = usePlaybook((state) => state.clearPlayerMotion)
   const flipPlayerRoute = usePlaybook((state) => state.flipPlayerRoute)
   const clearPlayerRoute = usePlaybook((state) => state.clearPlayerRoute)
   const applyRoutePreset = usePlaybook((state) => state.applyRoutePreset)
@@ -60,8 +76,13 @@ export function DesignView({ play, onBack }: DesignViewProps) {
   const playbook = usePlaybook(selectActivePlaybook)
 
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [tool, setTool] = useState<'move' | 'route' | 'sketch'>('move')
+  const [tool, setTool] = useState<'move' | 'route' | 'sketch' | 'motion' | 'option'>('move')
   const [draft, setDraft] = useState<RoutePoint[] | null>(null)
+  const [motionDraft, setMotionDraft] = useState<RoutePoint[] | null>(null)
+  const [optionDraft, setOptionDraft] = useState<RoutePoint[] | null>(null)
+  const [optionFrom, setOptionFrom] = useState<number | null>(null)
+  /** Option being reworked, so finishing the draft replaces it. */
+  const [optionEditId, setOptionEditId] = useState<string | null>(null)
   const [saveFormationOpen, setSaveFormationOpen] = useState(false)
   const [formationName, setFormationName] = useState('')
   const [deleteOpen, setDeleteOpen] = useState(false)
@@ -69,6 +90,7 @@ export function DesignView({ play, onBack }: DesignViewProps) {
   const [tagInputOpen, setTagInputOpen] = useState(false)
   const [helpOpen, setHelpOpen] = useState(false)
   const [sketchStatus, setSketchStatus] = useState<SketchStatus | null>(null)
+  const [routeHistory, setRouteHistory] = useState<RouteUndoEntry[]>([])
 
   const selectedPlayer = play.players.find((player) => player.id === selectedId) ?? null
   const formation = playbook.formations.find((item) => item.id === play.formationId)
@@ -78,11 +100,51 @@ export function DesignView({ play, onBack }: DesignViewProps) {
     setSelectedId(null)
     setTool('move')
     setDraft(null)
+    setMotionDraft(null)
+    setOptionDraft(null)
+    setOptionFrom(null)
+    setOptionEditId(null)
     setSketchStatus(null)
+    setRouteHistory([])
   }, [play.id])
+
+  /** Remembers a player's route before it changes, so undo can bring it back. */
+  const recordRoute = (playerId: string) => {
+    const player = play.players.find((item) => item.id === playerId)
+    setRouteHistory((current) =>
+      [
+        ...current,
+        {
+          playerId,
+          points: player?.route
+            ? player.route.points.map((point) => ({ ...point }))
+            : null,
+        },
+      ].slice(-40),
+    )
+  }
+
+  /**
+   * Undo while drawing drops the point just placed. Otherwise it restores the
+   * route from before its last edit, whether that was a drag, a preset, a flip
+   * or a clear.
+   */
+  const undoRoute = () => {
+    if (draft !== null || motionDraft !== null || optionDraft !== null) {
+      removeLastDraftPoint()
+      return
+    }
+    const entry = routeHistory[routeHistory.length - 1]
+    if (!entry) return
+    setRouteHistory(routeHistory.slice(0, -1))
+    if (entry.points?.length) setPlayerRoute(play.id, entry.playerId, entry.points)
+    else clearPlayerRoute(play.id, entry.playerId)
+    setSelectedId(entry.playerId)
+  }
 
   const finishDrawing = () => {
     if (draft !== null && selectedId) {
+      recordRoute(selectedId)
       setPlayerRoute(play.id, selectedId, draft)
     }
     setDraft(null)
@@ -91,7 +153,51 @@ export function DesignView({ play, onBack }: DesignViewProps) {
 
   const cancelDrawing = () => {
     setDraft(null)
+    setMotionDraft(null)
+    setOptionDraft(null)
+    setOptionFrom(null)
+    setOptionEditId(null)
     setTool('move')
+  }
+
+  const finishMotion = () => {
+    if (motionDraft !== null && selectedId) {
+      setPlayerMotion(play.id, selectedId, motionDraft)
+    }
+    setMotionDraft(null)
+    setTool('move')
+  }
+
+  /**
+   * Commits the branch being drawn. Reworking an existing option replaces it,
+   * and one left with no points drops off the route: it has nothing to run.
+   */
+  const finishOption = () => {
+    if (selectedId && optionFrom !== null && optionDraft !== null) {
+      if (optionEditId && !optionDraft.length) {
+        removePlayerRouteOption(play.id, selectedId, optionEditId)
+      } else if (optionEditId) {
+        updatePlayerRouteOption(play.id, selectedId, optionEditId, optionFrom, optionDraft)
+      } else if (optionDraft.length) {
+        addPlayerRouteOption(play.id, selectedId, optionFrom, optionDraft)
+      }
+    }
+    setOptionDraft(null)
+    setOptionFrom(null)
+    setOptionEditId(null)
+    setTool('move')
+  }
+
+  /** Ends whatever path is being drawn, route, motion or option. */
+  const finishActiveDraft = () => {
+    if (draft !== null) finishDrawing()
+    else if (motionDraft !== null) finishMotion()
+    else if (optionDraft !== null) finishOption()
+  }
+
+  const switchToMove = () => {
+    if (draft !== null || motionDraft !== null || optionDraft !== null) finishActiveDraft()
+    else setTool('move')
   }
 
   const startDrawing = () => {
@@ -99,12 +205,62 @@ export function DesignView({ play, onBack }: DesignViewProps) {
       setHelpOpen(true)
       return
     }
+    if (motionDraft !== null) finishMotion()
+    if (optionDraft !== null) finishOption()
     setDraft(selectedPlayer.route ? selectedPlayer.route.points.map((point) => ({ ...point })) : [])
     setTool('route')
   }
 
+  const startOption = () => {
+    if (!selectedPlayer?.route?.points.length) {
+      if (!selectedPlayer) setHelpOpen(true)
+      return
+    }
+    if (draft !== null) finishDrawing()
+    if (motionDraft !== null) finishMotion()
+    setOptionEditId(null)
+    setOptionFrom(null)
+    setOptionDraft(null)
+    setTool('option')
+  }
+
+  /** Reworks an option that is already on the route, branch point included. */
+  const startOptionEdit = (option: RouteOption) => {
+    if (!selectedPlayer) return
+    if (draft !== null) finishDrawing()
+    if (motionDraft !== null) finishMotion()
+    setOptionEditId(option.id)
+    setOptionFrom(option.from)
+    setOptionDraft(option.points.map((point) => ({ ...point })))
+    setTool('option')
+  }
+
+  /**
+   * Picks the route point a branch leaves from. An option being reworked keeps
+   * the points it already has; a new one starts from nothing.
+   */
+  const pickOptionFrom = (index: number) => {
+    setOptionFrom(index)
+    if (optionEditId === null) setOptionDraft([])
+  }
+
+  const startMotion = () => {
+    if (!selectedPlayer) {
+      setHelpOpen(true)
+      return
+    }
+    if (draft !== null) finishDrawing()
+    if (optionDraft !== null) finishOption()
+    setMotionDraft(
+      selectedPlayer.motion ? selectedPlayer.motion.points.map((point) => ({ ...point })) : [],
+    )
+    setTool('motion')
+  }
+
   const startSketching = () => {
     if (draft !== null) finishDrawing()
+    if (optionDraft !== null) finishOption()
+    setMotionDraft(null)
     setSelectedId(null)
     setSketchStatus(null)
     setTool('sketch')
@@ -130,6 +286,7 @@ export function DesignView({ play, onBack }: DesignViewProps) {
 
     const match = matchRoutePreset(relative, playerRouteSign(player), playbook.routes)
     if (match) {
+      recordRoute(player.id)
       applyRoutePreset(play.id, player.id, match.preset.id)
       setSelectedId(player.id)
       setSketchStatus({ tone: 'match', text: `${player.label} matched ${match.preset.name}` })
@@ -142,14 +299,24 @@ export function DesignView({ play, onBack }: DesignViewProps) {
       return
     }
 
+    recordRoute(player.id)
     setPlayerRoute(play.id, player.id, route)
     setSelectedId(player.id)
     setSketchStatus({ tone: 'freehand', text: `${player.label} kept as a freehand route` })
   }
 
   const removeLastDraftPoint = () => {
-    if (!draft) return
-    setDraft(draft.length ? draft.slice(0, -1) : [])
+    if (draft !== null) {
+      setDraft(draft.length ? draft.slice(0, -1) : [])
+      return
+    }
+    if (motionDraft !== null) {
+      setMotionDraft(motionDraft.length ? motionDraft.slice(0, -1) : [])
+      return
+    }
+    if (optionDraft !== null) {
+      setOptionDraft(optionDraft.length ? optionDraft.slice(0, -1) : [])
+    }
   }
 
   const nudge = (dx: number, dy: number) => {
@@ -160,18 +327,49 @@ export function DesignView({ play, onBack }: DesignViewProps) {
     })
   }
 
-  const shortcutState = useRef({ finishDrawing, startDrawing, cancelDrawing, nudge })
-  shortcutState.current = { finishDrawing, startDrawing, cancelDrawing, nudge }
+  const shortcutState = useRef({
+    finishActiveDraft,
+    startDrawing,
+    startMotion,
+    startOption,
+    cancelDrawing,
+    nudge,
+    undoRoute,
+    switchToMove,
+    removeLastDraftPoint,
+  })
+  shortcutState.current = {
+    finishActiveDraft,
+    startDrawing,
+    startMotion,
+    startOption,
+    cancelDrawing,
+    nudge,
+    undoRoute,
+    switchToMove,
+    removeLastDraftPoint,
+  }
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
       if (document.querySelector('[role="dialog"]')) return
       const target = event.target as HTMLElement
       if (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return
-      if (event.metaKey || event.ctrlKey) return
       const state = shortcutState.current
+      if (
+        (event.metaKey || event.ctrlKey) &&
+        event.key.toLowerCase() === 'z' &&
+        !event.shiftKey
+      ) {
+        event.preventDefault()
+        state.undoRoute()
+        return
+      }
+      if (event.metaKey || event.ctrlKey) return
+      const drawing =
+        draft !== null || motionDraft !== null || optionDraft !== null
       if (event.key === 'Escape') {
-        if (draft !== null) {
+        if (drawing) {
           event.preventDefault()
           state.cancelDrawing()
         } else {
@@ -179,20 +377,36 @@ export function DesignView({ play, onBack }: DesignViewProps) {
         }
         return
       }
-      if (event.key === 'Enter' && draft !== null) {
+      if (event.key === 'Enter' && drawing) {
         event.preventDefault()
-        state.finishDrawing()
+        state.finishActiveDraft()
         return
       }
-      if ((event.key === 'Backspace' || event.key === 'Delete') && draft !== null) {
+      if (
+        (event.key === 'Backspace' || event.key === 'Delete') &&
+        drawing
+      ) {
         event.preventDefault()
-        removeLastDraftPoint()
+        state.removeLastDraftPoint()
         return
       }
-      if (event.key.toLowerCase() === 'r') {
+      const key = event.key.toLowerCase()
+      if (key === 'r' || key === 'd') {
         event.preventDefault()
-        if (draft !== null) state.finishDrawing()
+        if (drawing) state.finishActiveDraft()
         else state.startDrawing()
+        return
+      }
+      if (key === 'o') {
+        if (!selectedPlayer?.route?.points.length) return
+        event.preventDefault()
+        if (drawing) state.finishActiveDraft()
+        else state.startOption()
+        return
+      }
+      if (key === 'm') {
+        event.preventDefault()
+        state.switchToMove()
         return
       }
       if (!selectedId || draft !== null) return
@@ -216,7 +430,7 @@ export function DesignView({ play, onBack }: DesignViewProps) {
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [draft, selectedId])
+  }, [draft, motionDraft, optionDraft, selectedId, selectedPlayer])
 
   const tags = useMemo(
     () => categories.filter((category) => play.categories.includes(category.id)),
@@ -321,7 +535,11 @@ export function DesignView({ play, onBack }: DesignViewProps) {
             <button
               key={preset.id}
               disabled={!selectedPlayer}
-              onClick={() => selectedPlayer && applyRoutePreset(play.id, selectedPlayer.id, preset.id)}
+              onClick={() => {
+                if (!selectedPlayer) return
+                recordRoute(selectedPlayer.id)
+                applyRoutePreset(play.id, selectedPlayer.id, preset.id)
+              }}
               className={cx(
                 'group flex items-center gap-1 rounded-lg border px-1.5 py-1.5 text-left transition-colors',
                 selectedPlayer
@@ -342,8 +560,10 @@ export function DesignView({ play, onBack }: DesignViewProps) {
 
         <div className="mt-5 rounded-xl border border-line bg-ink-850/60 p-3">
           <p className="text-[0.68rem] leading-relaxed text-slate-moss">
-            Routes mirror automatically for left and right receivers. Drag the
-            round handles to reshape a route point.
+            Routes mirror automatically for left and right receivers and start
+            where a motion ends: move the shift&apos;s last point and the whole
+            route travels with it. Drag the round handles to reshape a route
+            point, and Alt+click one to remove it.
           </p>
         </div>
       </aside>
@@ -390,10 +610,7 @@ export function DesignView({ play, onBack }: DesignViewProps) {
                 'flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[0.7rem] font-semibold transition-colors',
                 tool === 'move' ? 'bg-ink-750 text-chalk' : 'text-slate-moss hover:text-chalk',
               )}
-              onClick={() => {
-                if (draft !== null) finishDrawing()
-                setTool('move')
-              }}
+              onClick={switchToMove}
             >
               <MousePointer2 size={13} />
               Move
@@ -411,6 +628,31 @@ export function DesignView({ play, onBack }: DesignViewProps) {
             <button
               className={cx(
                 'flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[0.7rem] font-semibold transition-colors',
+                tool === 'motion' ? 'bg-lime text-lime-ink' : 'text-slate-moss hover:text-chalk',
+              )}
+              onClick={startMotion}
+              title="Draw a pre-snap motion, shown dashed"
+            >
+              <MoveRight size={13} />
+              Motion
+            </button>
+            <button
+              className={cx(
+                'flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[0.7rem] font-semibold transition-colors',
+                tool === 'option' ? 'bg-lime text-lime-ink' : 'text-slate-moss hover:text-chalk',
+                !selectedPlayer?.route?.points.length &&
+                  'cursor-not-allowed opacity-50 hover:text-slate-moss',
+              )}
+              onClick={startOption}
+              disabled={!selectedPlayer?.route?.points.length}
+              title="Branch an option off one of this route's points, shown dotted"
+            >
+              <GitBranch size={13} />
+              Option
+            </button>
+            <button
+              className={cx(
+                'flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[0.7rem] font-semibold transition-colors',
                 tool === 'sketch' ? 'bg-lime text-lime-ink' : 'text-slate-moss hover:text-chalk',
               )}
               onClick={startSketching}
@@ -422,7 +664,7 @@ export function DesignView({ play, onBack }: DesignViewProps) {
             </button>
           </div>
 
-          {draft !== null ? (
+          {draft !== null || motionDraft !== null || optionDraft !== null ? (
             <div className="flex items-center gap-1.5">
               <span className="hidden items-center gap-1 rounded-md border border-lime/25 bg-lime/10 px-2 py-1 text-[0.64rem] font-semibold text-lime sm:flex">
                 <CornerDownLeft size={11} /> Enter
@@ -431,11 +673,21 @@ export function DesignView({ play, onBack }: DesignViewProps) {
                 <Undo2 size={13} />
                 <span className="hidden sm:inline">Undo point</span>
               </button>
-              <button className="btn btn-primary !px-2.5 !py-1.5" onClick={finishDrawing}>
+              <button className="btn btn-primary !px-2.5 !py-1.5" onClick={finishActiveDraft}>
                 <Check size={13} />
                 Done
               </button>
-              <button className="icon-btn" onClick={cancelDrawing} aria-label="Cancel route">
+              <button
+                className="icon-btn"
+                onClick={cancelDrawing}
+                aria-label={
+                  draft !== null
+                    ? 'Cancel route'
+                    : motionDraft !== null
+                      ? 'Cancel motion'
+                      : 'Cancel option'
+                }
+              >
                 <X size={15} />
               </button>
             </div>
@@ -444,9 +696,21 @@ export function DesignView({ play, onBack }: DesignViewProps) {
               Draw from a player · release to snap or keep freehand
             </span>
           ) : (
-            <span className="hidden text-[0.66rem] text-slate-moss lg:block">
-              Click the field to add route points · double back with Undo
-            </span>
+            <>
+              <span className="hidden text-[0.66rem] text-slate-moss lg:block">
+                Click the field to add route points · double-click to finish
+              </span>
+              {routeHistory.length > 0 && (
+                <button
+                  className="btn btn-secondary !px-2.5 !py-1.5"
+                  onClick={undoRoute}
+                  title="Undo the last route edit (Ctrl+Z)"
+                >
+                  <Undo2 size={13} />
+                  <span className="hidden sm:inline">Undo route</span>
+                </button>
+              )}
+            </>
           )}
 
           <div className="ml-auto flex items-center gap-1.5">
@@ -529,24 +793,62 @@ export function DesignView({ play, onBack }: DesignViewProps) {
               selectedId={selectedId}
               tool={tool}
               draft={draft}
+              optionDraft={optionDraft}
+              optionFrom={optionFrom}
+              onPickOptionFrom={pickOptionFrom}
               onSelect={setSelectedId}
               onMovePlayer={(id, pos) => movePlayer(play.id, id, pos)}
               onAddDraftPoint={(point) => setDraft((current) => [...(current ?? []), point])}
-              onSetRoutePoints={(id, points) => setPlayerRoute(play.id, id, points)}
+              onSetRoutePoints={(id, points) => {
+                recordRoute(id)
+                setPlayerRoute(play.id, id, points)
+              }}
+              onSetOptionPoints={(id, optionId, from, points) =>
+                updatePlayerRouteOption(play.id, id, optionId, from, points)
+              }
+              onSetMotionPoints={(id, points) => setPlayerMotion(play.id, id, points)}
+              onRemoveRoutePoint={(id, index) => {
+                recordRoute(id)
+                removePlayerRoutePoint(play.id, id, index)
+              }}
+              onRemoveMotionPoint={(id, index) => removePlayerMotionPoint(play.id, id, index)}
+              onRemoveOptionPoint={(id, optionId, index) =>
+                removePlayerOptionPoint(play.id, id, optionId, index)
+              }
+              curveHandles
               onSketch={handleSketch}
+              hiddenOptionId={optionEditId}
+              motionDraft={motionDraft}
+              onAddMotionPoint={(point) =>
+                setMotionDraft((current) => [...(current ?? []), point])
+              }
+              onAddOptionPoint={(point) =>
+                setOptionDraft((current) => [...(current ?? []), point])
+              }
+              onFinishDraft={finishActiveDraft}
             />
           </div>
 
-          {draft !== null && (
-            <div className="pointer-events-none absolute bottom-5 left-1/2 -translate-x-1/2 rounded-full border border-lime/25 bg-ink-950/90 px-3 py-1.5 text-[0.66rem] font-medium text-lime shadow-lg backdrop-blur">
-              Click to place points · Enter to finish · Esc to cancel
+          {(draft !== null || motionDraft !== null || optionDraft !== null) && (
+            <div className="pointer-events-none absolute bottom-5 left-1/2 -translate-x-1/2 rounded-full border border-lime/25 bg-ink-950/90 px-3 py-1.5 text-center text-[0.66rem] font-medium text-lime shadow-lg backdrop-blur">
+              {optionDraft !== null
+                ? optionFrom === null
+                  ? 'Option · click the route point it breaks from'
+                  : `${optionEditId ? 'Editing option' : 'Option'} · click to place points · double-click or Enter to save · Esc cancel`
+                : `${draft !== null ? 'Route' : 'Motion'} · click to place points · double-click or Enter to finish · Esc cancel`}
             </div>
           )}
         </div>
 
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-line px-4 py-2 text-[0.62rem] text-slate-moss">
           <span>
-            {tool === 'sketch' ? 'Sketch from a player marker' : 'Drag players to align'}
+            {tool === 'sketch'
+              ? 'Sketch from a player marker'
+              : tool === 'motion'
+                ? 'Motions draw dashed'
+                : tool === 'option'
+                  ? 'Options draw dotted from a route point'
+                  : 'Click a route, motion or player to select'}
           </span>
           <span className="hidden sm:inline">
             {tool === 'sketch'
@@ -554,7 +856,10 @@ export function DesignView({ play, onBack }: DesignViewProps) {
               : 'Arrow keys nudge · Shift for 0.1 yd'}
           </span>
           <span className="hidden md:inline">
-            {tool === 'sketch' ? 'Experimental · best effort' : 'R draws a route'}
+            {tool === 'sketch' ? 'Experimental · best effort' : 'R or D draws · M moves'}
+          </span>
+          <span className="hidden lg:inline">
+            R or D draws · M moves · O branches an option · Alt+click removes a point
           </span>
           <span className="ml-auto font-mono uppercase tracking-[0.08em]">
             5v5 · 25 yd field
@@ -589,8 +894,15 @@ export function DesignView({ play, onBack }: DesignViewProps) {
                   {selectedPlayer.route
                     ? `${selectedPlayer.route.points.length} point${
                         selectedPlayer.route.points.length === 1 ? '' : 's'
-                      } · ${routeLength(selectedPlayer.route).toFixed(1)} yd`
+                      } · ${routeLength(selectedPlayer.route).toFixed(1)} yd${
+                        selectedPlayer.route.options?.length
+                          ? ` · ${selectedPlayer.route.options.length} option${
+                              selectedPlayer.route.options.length === 1 ? '' : 's'
+                            }`
+                          : ''
+                      }`
                     : 'No route assigned'}
+                  {selectedPlayer.motion?.points.length ? ' · motion' : ''}
                 </div>
               </div>
             </div>
@@ -669,8 +981,97 @@ export function DesignView({ play, onBack }: DesignViewProps) {
               </button>
               {selectedPlayer.route && (
                 <button
+                  className={cx(
+                    'btn w-full justify-start',
+                    tool === 'option' ? 'border-lime/40 !bg-lime/10 !text-lime' : 'btn-secondary',
+                  )}
+                  onClick={startOption}
+                  title="Add a dotted alternative that breaks off one of this route's points"
+                >
+                  <GitBranch size={14} />
+                  Add option
+                </button>
+              )}
+              {selectedPlayer.route?.options?.length ? (
+                <ul className="grid gap-1.5">
+                  {selectedPlayer.route.options.map((option, index) => {
+                    const editing = option.id === optionEditId
+                    const from = Math.min(
+                      option.from + 1,
+                      selectedPlayer.route?.points.length ?? 0,
+                    )
+                    return (
+                      <li
+                        key={option.id}
+                        className={cx(
+                          'flex items-center gap-2 rounded-lg border px-2.5 py-1.5',
+                          editing
+                            ? 'border-lime/40 bg-lime/[0.07]'
+                            : 'border-line bg-ink-850',
+                        )}
+                      >
+                        <GitBranch size={12} className="shrink-0 text-lime" />
+                        <span className="min-w-0 flex-1 truncate text-[0.66rem] text-fog">
+                          Option {index + 1} · from point {from} · {option.points.length} point
+                          {option.points.length === 1 ? '' : 's'}
+                        </span>
+                        <button
+                          className={cx(
+                            'icon-btn !h-6 !w-6',
+                            editing ? '!bg-lime/15 !text-lime' : 'hover:!text-lime',
+                          )}
+                          onClick={() => (editing ? finishOption() : startOptionEdit(option))}
+                          aria-label={
+                            editing ? `Finish option ${index + 1}` : `Edit option ${index + 1}`
+                          }
+                          title={
+                            editing
+                              ? 'Finish editing this option'
+                              : 'Edit this option’s points and branch point'
+                          }
+                        >
+                          <PenLine size={12} />
+                        </button>
+                        <button
+                          className="icon-btn !h-6 !w-6 hover:!bg-coral/10 hover:!text-coral"
+                          onClick={() => {
+                            if (editing) setOptionEditId(null)
+                            removePlayerRouteOption(play.id, selectedPlayer.id, option.id)
+                          }}
+                          aria-label={`Remove option ${index + 1}`}
+                          title="Remove this option"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </li>
+                    )
+                  })}
+                </ul>
+              ) : null}
+              <button className="btn btn-secondary w-full justify-start" onClick={startMotion}>
+                <MoveRight size={14} />
+                {selectedPlayer.motion ? 'Edit motion' : 'Draw motion'}
+              </button>
+              {selectedPlayer.motion && (
+                <button
+                  className="btn btn-ghost w-full justify-start !text-coral/90 hover:!bg-coral/10"
+                  onClick={() => {
+                    clearPlayerMotion(play.id, selectedPlayer.id)
+                    setMotionDraft(null)
+                    setTool('move')
+                  }}
+                >
+                  <Eraser size={14} />
+                  Clear motion
+                </button>
+              )}
+              {selectedPlayer.route && (
+                <button
                   className="btn btn-secondary w-full justify-start"
-                  onClick={() => flipPlayerRoute(play.id, selectedPlayer.id)}
+                  onClick={() => {
+                    recordRoute(selectedPlayer.id)
+                    flipPlayerRoute(play.id, selectedPlayer.id)
+                  }}
                   title="Mirror this route across the player's alignment"
                 >
                   <FlipHorizontal2 size={14} />
@@ -681,6 +1082,7 @@ export function DesignView({ play, onBack }: DesignViewProps) {
                 <button
                   className="btn btn-ghost w-full justify-start !text-coral/90 hover:!bg-coral/10"
                   onClick={() => {
+                    recordRoute(selectedPlayer.id)
                     clearPlayerRoute(play.id, selectedPlayer.id)
                     setDraft(null)
                     setTool('move')
@@ -888,18 +1290,71 @@ export function DesignView({ play, onBack }: DesignViewProps) {
           </li>
           <li className="flex gap-3">
             <span className="mono-label mt-0.5 text-lime">03</span>
-            Drag the round handles to adjust a route point. Press Enter to finish.
+            Double-click the field or press Enter to finish. The point under the
+            double-click is kept, and clicking the point you just placed again ends
+            the path there instead of stacking a second one on it.
           </li>
           <li className="flex gap-3">
             <span className="mono-label mt-0.5 text-lime">04</span>
-            Use Save formation to reuse an alignment in your next play.
+            Click a route, one of its options or the dashed motion line to select that
+            receiver. Then drag the round handles to adjust a route point, an option
+            point or a motion point —
+            moving the motion&apos;s last point carries the whole route with it — and the
+            small handle between two points to bow that segment. Double-click a bow
+            handle to straighten it, and Alt+click a round handle to remove that point,
+            whether it belongs to a route, an option or a motion.
           </li>
           <li className="flex gap-3">
             <span className="mono-label mt-0.5 text-lime">05</span>
+            Ctrl+Z steps back: while drawing it drops the point you just placed, and
+            otherwise it restores the route from before its last edit.
+          </li>
+          <li className="flex gap-3">
+            <span className="mono-label mt-0.5 text-lime">06</span>
+            Use Save formation to reuse an alignment in your next play.
+          </li>
+          <li className="flex gap-3">
+            <span className="mono-label mt-0.5 text-lime">07</span>
             In the experimental Sketch mode, draw from a player marker and release. We
             match the closest preset, or keep your line as a freehand route.
           </li>
+          <li className="flex gap-3">
+            <span className="mono-label mt-0.5 text-lime">08</span>
+            The Motion tool draws a pre-snap shift as a dashed line, and the route is
+            measured from where that shift ends — move the shift&apos;s last point and
+            the whole route travels with it. Add option draws a dotted alternative: pick
+            the route point it breaks from, then click the field to place its points. A
+            route can carry more than one option, and each one has an edit button beside
+            it to rework its points and branch point. Remove every point to drop it.
+          </li>
         </ol>
+        <div className="mt-5 grid grid-cols-2 gap-x-4 gap-y-1.5 border-t border-line pt-4 text-[0.72rem] text-slate-moss">
+          <span className="col-span-2 label">Keys</span>
+          <span>
+            <kbd className="mono-label text-chalk">R</kbd> /{' '}
+            <kbd className="mono-label text-chalk">D</kbd> draw a route
+          </span>
+          <span>
+            <kbd className="mono-label text-chalk">M</kbd> move players
+          </span>
+          <span>
+            <kbd className="mono-label text-chalk">Enter</kbd> finish route
+          </span>
+          <span>
+            <kbd className="mono-label text-chalk">Ctrl+Z</kbd> undo
+          </span>
+          <span>
+            <kbd className="mono-label text-chalk">Esc</kbd> cancel / deselect
+          </span>
+          <span>
+            <kbd className="mono-label text-chalk">Arrows</kbd> nudge player
+          </span>            <span>
+              <kbd className="mono-label text-chalk">O</kbd> branch an option
+            </span>
+            <span>
+              <kbd className="mono-label text-chalk">Alt+click</kbd> remove a point
+            </span>
+        </div>
         <div className="mt-5 flex justify-end">
           <button className="btn btn-primary" onClick={() => setHelpOpen(false)}>
             Got it

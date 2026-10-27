@@ -1,19 +1,40 @@
 import { describe, expect, it } from 'vitest'
 import type { Player } from '../../types'
 import {
+  MOTION_DASH,
+  OPTION_ROUTE_DASH,
   clampRoutePoint,
   clampRoutePointForPlayer,
   curveFromOffset,
   fieldRoutePoints,
   flipRoutePoints,
+  isRepeatClick,
+  motionShape,
+  optionShapes,
   routeLength,
   routeShape,
+  routeOrigin,
   segmentBowPoint,
   segmentControl,
   segmentOffset,
   toSvg,
   withCurve,
 } from '../geometry'
+
+describe('isRepeatClick', () => {
+  it('treats a second click on the point just placed as the end of the path', () => {
+    // Both halves of a double-click land on the spot the first one placed, so
+    // the pair has to leave one point behind, not two stacked on each other.
+    expect(isRepeatClick({ x: 2, y: 3 }, { x: 2, y: 3 })).toBe(true)
+    expect(isRepeatClick({ x: 2, y: 3.2 }, { x: 2, y: 3 })).toBe(true)
+  })
+
+  it('keeps drawing when the click lands anywhere else', () => {
+    expect(isRepeatClick({ x: 2, y: 3.5 }, { x: 2, y: 3 })).toBe(false)
+    expect(isRepeatClick({ x: 2, y: 3 }, undefined)).toBe(false)
+    expect(isRepeatClick({ x: 2, y: 3 }, null)).toBe(false)
+  })
+})
 
 describe('routeLength', () => {
   it('sums the distance between route points', () => {
@@ -161,6 +182,156 @@ describe('fieldRoutePoints', () => {
 
     expect(shape?.end.x).toBeCloseTo(edge.x)
     expect(shape?.end.y).toBeCloseTo(edge.y)
+  })
+})
+
+describe('motions and option routes', () => {
+  const receiver: Player = {
+    id: 'wr',
+    role: 'Wide Receiver',
+    label: 'WR-R',
+    number: 11,
+    color: '#64D8C4',
+    pos: { x: 11, y: 0 },
+    route: null,
+  }
+
+  it('draws a motion as a path from the player to its last point', () => {
+    const shape = motionShape(receiver, {
+      id: 'motion',
+      points: [{ x: -6, y: 0 }, { x: -6, y: 2 }],
+    })
+
+    expect(shape?.d).toBe('M 23.500 17.500 L 17.500 17.500 L 17.500 15.500')
+    expect(shape?.arrow.split(' ')).toHaveLength(3)
+  })
+
+  it('starts a route where the motion ends', () => {
+    const shifted: Player = {
+      ...receiver,
+      motion: { id: 'motion', points: [{ x: -6, y: 0 }, { x: -1, y: 2 }] },
+    }
+    // A route is measured from the motion's last point, not the marker.
+    expect(routeOrigin(shifted)).toEqual({ x: 10, y: 2 })
+    expect(routeOrigin(receiver)).toEqual(receiver.pos)
+
+    const shape = routeShape(shifted, { id: 'route', points: [{ x: 0, y: 4 }] })
+    expect(shape?.d).toBe('M 22.500 15.500 L 22.500 11.500')
+  })
+
+  it('carries the whole route when the motion shifts', () => {
+    const oneYard: Player = {
+      ...receiver,
+      motion: { id: 'motion', points: [{ x: -6, y: 0 }] },
+    }
+    const fourYards: Player = {
+      ...receiver,
+      motion: {
+        id: 'motion',
+        points: [{ x: -6, y: 0 }, { x: -5, y: 1 }, { x: -1, y: 3 }],
+      },
+    }
+    const route = { id: 'route', points: [{ x: 0, y: 4 }, { x: 2, y: 8, curve: 1 }] }
+
+    const before = routeShape(oneYard, route)
+    const after = routeShape(fourYards, route)
+
+    // The route keeps its own shape and travels with the motion: the same bow,
+    // translated by the four yards the shift gained.
+    expect(after?.end.x).toBeCloseTo(Number(before?.end.x) + 5)
+    expect(after?.end.y).toBeCloseTo(Number(before?.end.y) - 3)
+    expect(after?.angle).toBeCloseTo(Number(before?.angle))
+    expect(after?.d.split(' ')[0]).toBe('M')
+    expect(after?.d).not.toBe(before?.d)
+  })
+
+  it('has no shape for a motion without points', () => {
+    expect(motionShape(receiver, { id: 'motion', points: [] })).toBeNull()
+  })
+
+  it('uses a different dash for motions than for option branches', () => {
+    expect(MOTION_DASH).not.toBe(OPTION_ROUTE_DASH)
+  })
+})
+
+describe('option branches', () => {
+  const centre: Player = {
+    id: 'c',
+    role: 'Center',
+    label: 'C',
+    number: 50,
+    color: '#F1EEE4',
+    pos: { x: 0, y: 0 },
+    route: null,
+  }
+
+  const route = {
+    id: 'route',
+    points: [
+      { x: 0, y: 3 },
+      { x: 4, y: 8 },
+    ],
+    options: [
+      { id: 'first', from: 1, points: [{ x: 8, y: 8 }] },
+      { id: 'second', from: 0, points: [{ x: -4, y: 6 }] },
+    ],
+  }
+
+  it('draws each branch from the route point it leaves', () => {
+    const shapes = optionShapes(centre, route)
+
+    expect(shapes).toHaveLength(2)
+    // From route point (4, 8) out to (8, 8), in SVG coordinates.
+    expect(shapes[0].d).toBe('M 16.500 9.500 L 20.500 9.500')
+    // A second branch leaves the first route point (0, 3) instead.
+    expect(shapes[1].d).toBe('M 12.500 14.500 L 8.500 11.500')
+    expect(shapes.every((shape) => shape.arrow.split(' ').length === 3)).toBe(true)
+  })
+
+  it('leaves a route without options with nothing to draw', () => {
+    expect(optionShapes(centre, { id: 'plain', points: [{ x: 0, y: 3 }] })).toEqual([])
+    expect(
+      optionShapes(centre, { ...route, options: [{ id: 'empty', from: 0, points: [] }] }),
+    ).toEqual([])
+  })
+
+  it('skips a branch whose route point no longer exists', () => {
+    expect(
+      optionShapes(centre, { ...route, options: [{ id: 'gone', from: 5, points: [{ x: 1, y: 1 }] }] }),
+    ).toEqual([])
+  })
+
+  it('draws branches from the route as the motion leaves it', () => {
+    const shifting: Player = {
+      ...centre,
+      motion: { id: 'motion', points: [{ x: 0, y: 1 }] },
+    }
+
+    const [branch] = optionShapes(shifting, {
+      id: 'route',
+      points: [{ x: 0, y: 3 }],
+      options: [{ id: 'option', from: 0, points: [{ x: 2, y: 6 }] }],
+    })
+
+    // Route point (0, 3) now sits at (0, 4), so the branch leaves there and
+    // ends one yard past where the same option would sit without the shift.
+    expect(branch.d).toBe('M 12.500 13.500 L 14.500 10.500')
+  })
+
+  it('draws a branch inside the field even when its points run past the edge', () => {
+    const receiver: Player = {
+      ...centre,
+      pos: { x: 11, y: 0 },
+      route: null,
+    }
+    const shapes = optionShapes(receiver, {
+      id: 'route',
+      points: [{ x: 0, y: 3 }],
+      options: [{ id: 'wide', from: 0, points: [{ x: 8, y: 4 }] }],
+    })
+
+    // The option's point is pulled back to the right sideline for drawing.
+    expect(shapes[0].d).toBe('M 23.500 14.500 L 24.900 13.500')
   })
 })
 

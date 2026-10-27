@@ -326,7 +326,7 @@ export function RouteLibraryEditor({
             <p className="mt-2 text-[0.64rem] leading-relaxed text-slate-moss">
               {draft !== null
                 ? 'Click the field to add points. Drag handles to refine, then choose Done.'
-                : 'Drag the round handles to reshape this route, or the dashed one in the middle of a segment to bow it.'}
+                : 'Drag the round handles to reshape this route, Alt+click one to remove its point, or drag the dashed one in the middle of a segment to bow it.'}
             </p>
             <p className="mt-1.5 text-[0.64rem] leading-relaxed text-slate-moss">
               <span className="font-semibold text-fog">Tip:</span> a segment bows

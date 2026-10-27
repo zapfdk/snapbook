@@ -1,7 +1,12 @@
 import { jsPDF } from 'jspdf'
 import type { Play, Player, Point, RoutePoint, WristCoachSettings } from '../../types'
 import { hexToRgb, readableInk } from '../color'
-import { fieldRoutePoints, segmentControl } from '../geometry'
+import {
+  fieldRoutePoints,
+  offsetPoint,
+  routeOrigin,
+  segmentControl,
+} from '../geometry'
 import { slugify } from '../files'
 
 export interface WristPage {
@@ -30,15 +35,19 @@ interface FieldMap {
   py: (y: number) => number
 }
 
-function sampleRoute(player: Player, points: RoutePoint[]): { route: Point[]; end: Point; tangent: Point } | null {
+function sampleRoute(
+  origin: Point,
+  points: RoutePoint[],
+  start: Point,
+): { route: Point[]; end: Point; tangent: Point } | null {
   if (!points.length) return null
-  const route: Point[] = [{ ...player.pos }]
-  let previous: Point = { ...player.pos }
-  let end: Point = { ...player.pos }
+  const route: Point[] = [{ ...start }]
+  let previous: Point = { ...start }
+  let end: Point = { ...start }
   let tangent: Point = { x: 0, y: 1 }
 
   for (const point of points) {
-    const absolute = { x: player.pos.x + point.x, y: player.pos.y + point.y }
+    const absolute = offsetPoint(origin, point)
     const control = segmentControl(previous, absolute, point.curve)
     if (control) {
       const steps = 16
@@ -80,15 +89,21 @@ function drawFieldLines(doc: jsPDF, map: FieldMap, fieldLines: boolean) {
   doc.rect(map.x, map.y, map.size, map.size)
 }
 
+/** Dotted for an option branch, long dashes for a motion, in millimetres. */
+const OPTION_DASH_MM = [0.12, 0.5]
+const MOTION_DASH_MM = [0.6, 0.4]
+
 function drawRoute(
   doc: jsPDF,
   map: FieldMap,
-  player: Player,
   points: RoutePoint[],
   color: string,
   lineWidth: number,
+  origin: Point,
+  dash?: number[],
+  start: Point = origin,
 ) {
-  const sampled = sampleRoute(player, points)
+  const sampled = sampleRoute(origin, points, start)
   if (!sampled) return
   const [r, g, b] = hexToRgb(color)
   doc.setDrawColor(r, g, b)
@@ -96,11 +111,13 @@ function drawRoute(
   doc.setLineWidth(lineWidth)
   doc.setLineCap('round')
   doc.setLineJoin('round')
+  doc.setLineDashPattern(dash ?? [], 0)
 
   const mapped = sampled.route.map((point) => ({ x: map.px(point.x), y: map.py(point.y) }))
   for (let index = 1; index < mapped.length; index += 1) {
     doc.line(mapped[index - 1].x, mapped[index - 1].y, mapped[index].x, mapped[index].y)
   }
+  doc.setLineDashPattern([], 0)
 
   const end = { x: map.px(sampled.end.x), y: map.py(sampled.end.y) }
   const tangent = sampled.tangent
@@ -228,15 +245,48 @@ function drawCard(
   drawFieldLines(doc, map, settings.showFieldLines)
   const routeWidth = Math.max(0.16, size * 0.0085)
   for (const player of play.players) {
-    if (!player.route) continue
+    if (!player.motion?.points.length) continue
     drawRoute(
       doc,
       map,
-      player,
-      fieldRoutePoints(player.pos, player.route.points),
+      fieldRoutePoints(player.pos, player.motion.points),
       settings.monochrome ? inkHex : player.color,
-      routeWidth,
+      Math.max(0.12, routeWidth * 0.8),
+      player.pos,
+      MOTION_DASH_MM,
     )
+  }
+  for (const player of play.players) {
+    if (!player.route) continue
+    const color = settings.monochrome ? inkHex : player.color
+    // The route is measured from where the motion ends, so the shift and the
+    // route read as one movement.
+    const origin = routeOrigin(player)
+    drawRoute(
+      doc,
+      map,
+      fieldRoutePoints(origin, player.route.points),
+      color,
+      routeWidth,
+      origin,
+    )
+    // An option leaves a route point and ends in its own arrow, dotted so it
+    // never reads as the main break.
+    const routePoints = fieldRoutePoints(origin, player.route.points)
+    for (const option of player.route.options ?? []) {
+      const branch = routePoints[option.from]
+      if (!branch || !option.points.length) continue
+      drawRoute(
+        doc,
+        map,
+        fieldRoutePoints(origin, option.points),
+        color,
+        Math.max(0.12, routeWidth * 0.85),
+        origin,
+        OPTION_DASH_MM,
+        offsetPoint(origin, branch),
+      )
+    }
   }
   for (const player of play.players) {
     drawPlayer(doc, map, player, {

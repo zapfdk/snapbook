@@ -6,15 +6,18 @@ import { applyRosterGroupPatch, type RosterGroupPatch } from '../lib/roster'
 import { applyFormationUpdate, cloneFormation } from '../lib/formations'
 import { clonePlaybook, uniquePlaybookName } from '../lib/library'
 import { DEFAULT_ROUTE_TREE_SETTINGS } from '../lib/routeTree'
-import { clampRoutePointForPlayer, flipRoutePoints } from '../lib/geometry'
+import { clampRoutePointForPlayer, flipRoutePoints, routeOrigin } from '../lib/geometry'
 import {
   type Category,
   type Formation,
   type LibraryRoute,
+  type Motion,
   type Play,
   type Playbook,
   type Player,
   type Point,
+  type Route,
+  type RouteOption,
   type RoutePoint,
   type RouteTreeSettings,
   type WristCoachSettings,
@@ -29,7 +32,31 @@ const clonePlayersFromFormation = (formation: Formation): Player[] =>
     id: createId(),
     pos: { ...player.pos },
     route: null,
+    motion: null,
   }))
+
+const cloneRouteOption = (option: RouteOption): RouteOption => ({
+  id: createId(),
+  from: option.from,
+  points: option.points.map((point) => ({ ...point })),
+})
+
+const cloneRouteOptions = (options: RouteOption[] | undefined): RouteOption[] =>
+  (options ?? []).map(cloneRouteOption)
+
+const cloneRoute = (route: Route | null | undefined): Route | null =>
+  route
+    ? {
+        id: createId(),
+        points: route.points.map((point) => ({ ...point })),
+        ...(route.options?.length ? { options: cloneRouteOptions(route.options) } : {}),
+      }
+    : null
+
+const cloneMotion = (motion: Motion | null | undefined): Motion | null =>
+  motion
+    ? { id: createId(), points: motion.points.map((point) => ({ ...point })) }
+    : null
 
 const sideSign = (player: Player) => (player.pos.x > 0 ? -1 : 1)
 
@@ -48,16 +75,21 @@ const routeFromPreset = (routes: LibraryRoute[], presetId: string, player: Playe
 }
 
 /**
- * Route points are offsets from the player's alignment, so the field edges only
- * mean something with that alignment in hand. Points the coach places by hand
- * are pulled back here, so the play never records a point that cannot be seen
- * or grabbed.
+ * Route points are offsets from where the player starts running — their
+ * alignment, or the end of their motion — so the field edges only mean
+ * something with that origin in hand. Points the coach places by hand are
+ * pulled back here, so the play never records a point that cannot be seen or
+ * grabbed.
  *
  * Flipping and library routes are deliberately left alone: they keep their real
  * shape (`fieldRoutePoints` limits them while drawing), so flipping a route
  * back — or re-applying a library route — returns exactly what it was.
  */
 const clampRouteToField = (player: Player, points: RoutePoint[]): RoutePoint[] =>
+  points.map((point) => clampRoutePointForPlayer(routeOrigin(player), point))
+
+/** A motion runs from the alignment, so its points are clamped from there. */
+const clampMotionToField = (player: Player, points: RoutePoint[]): RoutePoint[] =>
   points.map((point) => clampRoutePointForPlayer(player.pos, point))
 
 const defaultWrist: WristCoachSettings = {
@@ -108,6 +140,25 @@ export interface PlaybookState {
   movePlayer: (playId: string, playerId: string, pos: Point) => void
   applyRoutePreset: (playId: string, playerId: string, presetId: string) => void
   setPlayerRoute: (playId: string, playerId: string, points: RoutePoint[]) => void
+  addPlayerRouteOption: (
+    playId: string,
+    playerId: string,
+    from: number,
+    points: RoutePoint[],
+  ) => void
+  updatePlayerRouteOption: (
+    playId: string,
+    playerId: string,
+    optionId: string,
+    from: number,
+    points: RoutePoint[],
+  ) => void
+  removePlayerRouteOption: (playId: string, playerId: string, optionId: string) => void
+  removePlayerRoutePoint: (playId: string, playerId: string, index: number) => void
+  removePlayerOptionPoint: (playId: string, playerId: string, optionId: string, index: number) => void
+  removePlayerMotionPoint: (playId: string, playerId: string, index: number) => void
+  setPlayerMotion: (playId: string, playerId: string, points: RoutePoint[]) => void
+  clearPlayerMotion: (playId: string, playerId: string) => void
   flipPlayerRoute: (playId: string, playerId: string) => void
   clearPlayerRoute: (playId: string, playerId: string) => void
   addRoute: (route: LibraryRoute) => void
@@ -401,12 +452,8 @@ export const usePlaybook = create<PlaybookState>()(
               ...player,
               id: createId(),
               pos: { ...player.pos },
-              route: player.route
-                ? {
-                    id: createId(),
-                    points: player.route.points.map((point) => ({ ...point })),
-                  }
-                : null,
+              route: cloneRoute(player.route),
+              motion: cloneMotion(player.motion),
             })),
             createdAt: now(),
             updatedAt: now(),
@@ -475,18 +522,209 @@ export const usePlaybook = create<PlaybookState>()(
             playbooks: patchActive(state, (pb) =>
               updatePlayIn(pb, playId, (play) => ({
                 ...play,
+                players: play.players.map((player) => {
+                  if (player.id !== playerId) return player
+                  if (!points.length) return { ...player, route: null }
+                  const clamped = clampRouteToField(player, points)
+                  return {
+                    ...player,
+                    route: {
+                      id: player.route?.id ?? createId(),
+                      points: clamped,
+                      // A branch can only leave a point that still exists.
+                      ...(player.route?.options?.length
+                        ? {
+                            options: player.route.options.filter(
+                              (option) => option.from < clamped.length,
+                            ),
+                          }
+                        : {}),
+                    },
+                  }
+                }),
+                updatedAt: now(),
+              })),
+            ),
+          })),
+
+        addPlayerRouteOption: (playId, playerId, from, points) =>
+          set((state) => ({
+            playbooks: patchActive(state, (pb) =>
+              updatePlayIn(pb, playId, (play) => ({
+                ...play,
+                players: play.players.map((player) => {
+                  if (player.id !== playerId || !player.route) return player
+                  const route = player.route
+                  if (!Number.isInteger(from) || from < 0 || from >= route.points.length) {
+                    return player
+                  }
+                  if (!points.length) return player
+                  const option: RouteOption = {
+                    id: createId(),
+                    from,
+                    points: clampRouteToField(player, points),
+                  }
+                  return {
+                    ...player,
+                    route: { ...route, options: [...(route.options ?? []), option] },
+                  }
+                }),
+                updatedAt: now(),
+              })),
+            ),
+          })),
+
+        updatePlayerRouteOption: (playId, playerId, optionId, from, points) =>
+          set((state) => ({
+            playbooks: patchActive(state, (pb) =>
+              updatePlayIn(pb, playId, (play) => ({
+                ...play,
+                players: play.players.map((player) => {
+                  const route = player.route
+                  if (player.id !== playerId || !route) return player
+                  if (!route.options?.some((option) => option.id === optionId)) return player
+                  // A branch always leaves a real route point, wherever it starts.
+                  if (!Number.isInteger(from) || from < 0 || from >= route.points.length) {
+                    return player
+                  }
+                  // An option left with no points has nothing to run, so it goes.
+                  const options = points.length
+                    ? (route.options ?? []).map((option) =>
+                        option.id === optionId
+                          ? { ...option, from, points: clampRouteToField(player, points) }
+                          : option,
+                      )
+                    : (route.options ?? []).filter((option) => option.id !== optionId)
+                  const { options: _previous, ...rest } = route
+                  return { ...player, route: options.length ? { ...rest, options } : rest }
+                }),
+                updatedAt: now(),
+              })),
+            ),
+          })),
+
+        removePlayerRouteOption: (playId, playerId, optionId) =>
+          set((state) => ({
+            playbooks: patchActive(state, (pb) =>
+              updatePlayIn(pb, playId, (play) => ({
+                ...play,
+                players: play.players.map((player) => {
+                  if (player.id !== playerId || !player.route?.options?.length) return player
+                  const options = player.route.options.filter(
+                    (option) => option.id !== optionId,
+                  )
+                  const { options: _previous, ...route } = player.route
+                  return {
+                    ...player,
+                    route: options.length ? { ...route, options } : route,
+                  }
+                }),
+                updatedAt: now(),
+              })),
+            ),
+          })),
+
+        removePlayerRoutePoint: (playId, playerId, index) =>
+          set((state) => ({
+            playbooks: patchActive(state, (pb) =>
+              updatePlayIn(pb, playId, (play) => ({
+                ...play,
+                players: play.players.map((player) => {
+                  const route = player.route
+                  if (player.id !== playerId || !route) return player
+                  const points = route.points.filter((_, position) => position !== index)
+                  if (points.length === route.points.length) return player
+                  if (!points.length) return { ...player, route: null }
+                  // A branch leaves a route point by position, so the ones after
+                  // the removed point move up with it and the one that left the
+                  // removed point goes with it.
+                  const options = (route.options ?? [])
+                    .filter((option) => option.from !== index)
+                    .map((option) =>
+                      option.from > index ? { ...option, from: option.from - 1 } : option,
+                    )
+                  const { options: _previous, ...rest } = route
+                  const shortened = { ...rest, points }
+                  return { ...player, route: options.length ? { ...shortened, options } : shortened }
+                }),
+                updatedAt: now(),
+              })),
+            ),
+          })),
+
+        removePlayerOptionPoint: (playId, playerId, optionId, index) =>
+          set((state) => ({
+            playbooks: patchActive(state, (pb) =>
+              updatePlayIn(pb, playId, (play) => ({
+                ...play,
+                players: play.players.map((player) => {
+                  const route = player.route
+                  if (player.id !== playerId || !route?.options?.length) return player
+                  const target = route.options.find((option) => option.id === optionId)
+                  if (!target) return player
+                  const remaining = target.points.filter((_, position) => position !== index)
+                  if (remaining.length === target.points.length) return player
+                  // A branch with no points left has nothing to run.
+                  const options = remaining.length
+                    ? route.options.map((option) =>
+                        option.id === optionId ? { ...option, points: remaining } : option,
+                      )
+                    : route.options.filter((option) => option.id !== optionId)
+                  const { options: _previous, ...rest } = route
+                  return { ...player, route: options.length ? { ...rest, options } : rest }
+                }),
+                updatedAt: now(),
+              })),
+            ),
+          })),
+
+        removePlayerMotionPoint: (playId, playerId, index) =>
+          set((state) => ({
+            playbooks: patchActive(state, (pb) =>
+              updatePlayIn(pb, playId, (play) => ({
+                ...play,
+                players: play.players.map((player) => {
+                  const motion = player.motion
+                  if (player.id !== playerId || !motion) return player
+                  const points = motion.points.filter((_, position) => position !== index)
+                  if (points.length === motion.points.length) return player
+                  return { ...player, motion: points.length ? { ...motion, points } : null }
+                }),
+                updatedAt: now(),
+              })),
+            ),
+          })),
+
+        setPlayerMotion: (playId, playerId, points) =>
+          set((state) => ({
+            playbooks: patchActive(state, (pb) =>
+              updatePlayIn(pb, playId, (play) => ({
+                ...play,
                 players: play.players.map((player) =>
                   player.id === playerId
                     ? {
                         ...player,
-                        route: points.length
+                        motion: points.length
                           ? {
-                              id: player.route?.id ?? createId(),
-                              points: clampRouteToField(player, points),
+                              id: player.motion?.id ?? createId(),
+                              points: clampMotionToField(player, points),
                             }
                           : null,
                       }
                     : player,
+                ),
+                updatedAt: now(),
+              })),
+            ),
+          })),
+
+        clearPlayerMotion: (playId, playerId) =>
+          set((state) => ({
+            playbooks: patchActive(state, (pb) =>
+              updatePlayIn(pb, playId, (play) => ({
+                ...play,
+                players: play.players.map((player) =>
+                  player.id === playerId ? { ...player, motion: null } : player,
                 ),
                 updatedAt: now(),
               })),
@@ -505,6 +743,14 @@ export const usePlaybook = create<PlaybookState>()(
                         route: {
                           ...player.route,
                           points: flipRoutePoints(player.route.points),
+                          ...(player.route.options?.length
+                            ? {
+                                options: player.route.options.map((option) => ({
+                                  ...option,
+                                  points: flipRoutePoints(option.points),
+                                })),
+                              }
+                            : {}),
                         },
                       }
                     : player,
@@ -752,12 +998,8 @@ export const usePlaybook = create<PlaybookState>()(
               ...player,
               id: createId(),
               pos: { ...player.pos },
-              route: player.route
-                ? {
-                    id: createId(),
-                    points: player.route.points.map((point) => ({ ...point })),
-                  }
-                : null,
+              route: cloneRoute(player.route),
+              motion: cloneMotion(player.motion),
             })),
           }))
           const playbook: Playbook = {
