@@ -29,10 +29,12 @@ npm run build   # typecheck and production build
   label, number and colour once for every formation and play.
 - **Route library** — start with 18 coaching presets, then add, duplicate,
   edit and delete your own. Each route has a full-field preview, group, colour
-  and coaching note, and its points are editable on the field.
+  and coaching note, and its points are editable on the field. Each card counts
+  the plays using it and opens that list.
 - **Formation library** — browse every starting alignment, create new ones,
   rename them, and drag players to realign them. Editing a formation also
   re-aligns the plays already built from it while leaving their routes intact.
+  Each card counts the plays built from it and opens that list.
 - **Designer** — drag five players, apply library routes, draw custom
   route points, adjust labels/numbers/colours, tag plays, and save alignments as
   reusable formations. A route point you place stays on the field: dragging one
@@ -240,6 +242,15 @@ Applying an edited route to a player copies its current points; plays that
 already use older points keep them. Deleting a preset is the same: existing
 plays are untouched.
 
+Each route card counts the plays that use it, and each formation card counts the
+plays built from it. Clicking that count lists those plays — with the receivers
+running the route, or the play's wrist code — and picking one opens it in the
+designer. A formation is matched by name, since a play names its formation. A
+route is matched by shape, because a play stores its own points: the comparison
+ignores which side the route runs to and the sign of each bow, so a route
+applied to a right-side receiver or flipped still counts, while a route
+reshaped by hand no longer does.
+
 Every segment also carries a **bow** in yards, positive to one side and negative
 to the other, which the diagram, the printouts and the route tree all follow.
 Bowing a segment is part of this editor: drag the dashed handle in the middle of
@@ -414,13 +425,6 @@ empty field that meets a protected file says the file needs a password.
 
 Small things to pick up another time:
 
-- **List the plays that use a formation or a route.** The formation library
-  counts plays ("Used by 3 plays") but there is no way to see which ones, and the
-  route library says nothing about where a route is used. Both should offer a
-  shortcut from the card — the count, or a menu entry — that lists the plays using
-  it and opens one. A play names its formation, so that is a lookup; a play keeps
-  its own route points, so a route has to be found by the shape it was applied
-  from, which the sketch matcher already does.
 - **Run a security review of the repository.** The Dropbox sign-in path has
   been looked at — PKCE with no client secret, the OAuth `state` compared
   against a sessionStorage record before the code is exchanged, the callback

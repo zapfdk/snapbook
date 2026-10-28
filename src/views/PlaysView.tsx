@@ -385,9 +385,9 @@ export function PlaysView({
       )}
         </>
       ) : mode === 'routes' ? (
-        <RouteLibraryTab />
+        <RouteLibraryTab onOpenPlay={onOpenPlay} />
       ) : (
-        <FormationLibraryTab />
+        <FormationLibraryTab onOpenPlay={onOpenPlay} />
       )}
 
       <Modal

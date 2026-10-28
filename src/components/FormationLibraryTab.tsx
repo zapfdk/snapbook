@@ -2,10 +2,12 @@ import { useMemo, useState } from 'react'
 import { Copy, Pencil, Plus, Search, Trash2, X } from 'lucide-react'
 import { Modal } from './Modal'
 import { PlayDiagram } from './PlayDiagram'
+import { PlayUsageDialog } from './PlayUsageDialog'
 import { FormationLibraryEditor } from './FormationLibraryEditor'
 import { selectActivePlaybook, usePlaybook } from '../store/playbook'
 import { createFormationPlayers } from '../data/defaults'
 import { cloneFormationPlayers, formationUsage, uniqueFormationName } from '../lib/formations'
+import { playsUsingFormation } from '../lib/usage'
 import { createId, type Formation } from '../types'
 
 interface EditorState {
@@ -13,7 +15,7 @@ interface EditorState {
   isNew: boolean
 }
 
-export function FormationLibraryTab() {
+export function FormationLibraryTab({ onOpenPlay }: { onOpenPlay: (playId: string) => void }) {
   const playbook = usePlaybook(selectActivePlaybook)
   const addFormation = usePlaybook((state) => state.addFormation)
   const duplicateFormation = usePlaybook((state) => state.duplicateFormation)
@@ -23,6 +25,7 @@ export function FormationLibraryTab() {
   const [query, setQuery] = useState('')
   const [editor, setEditor] = useState<EditorState | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Formation | null>(null)
+  const [usageTarget, setUsageTarget] = useState<Formation | null>(null)
 
   const filtered = useMemo(() => {
     const term = query.toLowerCase().trim()
@@ -204,9 +207,20 @@ export function FormationLibraryTab() {
                     {formation.name}
                   </h3>
                   <div className="mt-3 flex items-center justify-between gap-2 border-t border-line/70 pt-2.5">
-                    <span className="text-[0.62rem] text-slate-moss">
-                      {usage ? `Used by ${usage} play${usage === 1 ? '' : 's'}` : 'Not used yet'}
-                    </span>
+                    {usage ? (
+                      <button
+                        className="text-[0.62rem] font-semibold text-lime/80 underline-offset-2 hover:text-lime hover:underline"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          setUsageTarget(formation)
+                        }}
+                        title={`Show the plays using ${formation.name}`}
+                      >
+                        Used by {usage} play{usage === 1 ? '' : 's'}
+                      </button>
+                    ) : (
+                      <span className="text-[0.62rem] text-slate-moss">Not used yet</span>
+                    )}
                     <span className="font-mono text-[0.58rem] uppercase tracking-[0.08em] text-slate-moss">
                       5v5
                     </span>
@@ -217,6 +231,19 @@ export function FormationLibraryTab() {
           })}
         </div>
       )}
+
+      <PlayUsageDialog
+        open={Boolean(usageTarget)}
+        onClose={() => setUsageTarget(null)}
+        title={usageTarget ? `Plays using ${usageTarget.name}` : 'Plays'}
+        description="Every play built from this formation. Pick one to open it."
+        rows={(usageTarget ? playsUsingFormation(playbook, usageTarget.id) : []).map((play) => ({
+          play,
+          detail: play.codeName || undefined,
+        }))}
+        empty="No plays start from this formation yet."
+        onOpenPlay={onOpenPlay}
+      />
 
       <FormationLibraryEditor
         open={Boolean(editor)}

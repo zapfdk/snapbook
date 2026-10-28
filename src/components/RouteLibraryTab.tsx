@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowUpRight, Copy, Pencil, Plus, Search, Trash2, X } from 'lucide-react'
 import { Modal } from './Modal'
+import { PlayUsageDialog } from './PlayUsageDialog'
 import { RoutePreview } from './RoutePreview'
 import { RouteLibraryEditor } from './RouteLibraryEditor'
 import { selectActivePlaybook, usePlaybook } from '../store/playbook'
@@ -12,6 +13,7 @@ import {
   routeDepth,
   type RouteGroup,
 } from '../data/routeLibrary'
+import { playsUsingRoute } from '../lib/usage'
 import type { LibraryRoute } from '../types'
 import { cx } from '../lib/files'
 
@@ -20,7 +22,7 @@ interface EditorState {
   isNew: boolean
 }
 
-export function RouteLibraryTab() {
+export function RouteLibraryTab({ onOpenPlay }: { onOpenPlay: (playId: string) => void }) {
   const playbook = usePlaybook(selectActivePlaybook)
   const addRoute = usePlaybook((state) => state.addRoute)
   const duplicateRoute = usePlaybook((state) => state.duplicateRoute)
@@ -32,6 +34,7 @@ export function RouteLibraryTab() {
   const [preview, setPreview] = useState<LibraryRoute | null>(null)
   const [editor, setEditor] = useState<EditorState | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<LibraryRoute | null>(null)
+  const [usageTarget, setUsageTarget] = useState<LibraryRoute | null>(null)
   const searchRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -62,6 +65,14 @@ export function RouteLibraryTab() {
       return matchesGroup && matchesQuery
     })
   }, [playbook.routes, query, group])
+
+  // A play stores its own route points, so every library route is matched
+  // against the plays once, by the shape it was applied from.
+  const usage = useMemo(() => {
+    const byRoute = new Map<string, ReturnType<typeof playsUsingRoute>>()
+    for (const route of playbook.routes) byRoute.set(route.id, playsUsingRoute(playbook, route))
+    return byRoute
+  }, [playbook])
 
   const editingNames = editor
     ? playbook.routes
@@ -170,6 +181,7 @@ export function RouteLibraryTab() {
         <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {filtered.map((route) => {
             const depth = routeDepth(route.points)
+            const usedBy = usage.get(route.id) ?? []
             return (
               <article
                 key={route.id}
@@ -254,12 +266,30 @@ export function RouteLibraryTab() {
                   <p className="mt-1.5 line-clamp-2 min-h-[2.2rem] text-[0.72rem] leading-relaxed text-slate-moss">
                     {route.note || 'No coaching note yet.'}
                   </p>
-                  <div className="mt-3 flex items-center justify-between gap-2 border-t border-line/70 pt-2.5">
-                    <span className="text-[0.62rem] text-slate-moss">
-                      {formatRouteBreak(route.points)} · {depth} yd
-                    </span>
+                  <div className="mt-3 flex items-end justify-between gap-2 border-t border-line/70 pt-2.5">
+                    <div className="min-w-0">
+                      <span className="block text-[0.62rem] text-slate-moss">
+                        {formatRouteBreak(route.points)} · {depth} yd
+                      </span>
+                      {usedBy.length ? (
+                        <button
+                          className="mt-0.5 block text-[0.62rem] font-semibold text-lime/80 underline-offset-2 hover:text-lime hover:underline"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            setUsageTarget(route)
+                          }}
+                          title={`Show the plays using ${route.name}`}
+                        >
+                          Used by {usedBy.length} play{usedBy.length === 1 ? '' : 's'}
+                        </button>
+                      ) : (
+                        <span className="mt-0.5 block text-[0.62rem] text-slate-moss/70">
+                          Not used in a play yet
+                        </span>
+                      )}
+                    </div>
                     <span
-                      className="h-1.5 w-8 rounded-full"
+                      className="h-1.5 w-8 shrink-0 rounded-full"
                       style={{ backgroundColor: route.color }}
                     />
                   </div>
@@ -269,6 +299,19 @@ export function RouteLibraryTab() {
           })}
         </div>
       )}
+
+      <PlayUsageDialog
+        open={Boolean(usageTarget)}
+        onClose={() => setUsageTarget(null)}
+        title={usageTarget ? `Plays using ${usageTarget.name}` : 'Plays'}
+        description="Matched by route shape, so a route edited by hand no longer counts. Pick a play to open it."
+        rows={(usageTarget ? (usage.get(usageTarget.id) ?? []) : []).map((entry) => ({
+          play: entry.play,
+          detail: `Run by ${entry.labels.join(', ')}`,
+        }))}
+        empty="No play uses this route yet. Apply it to a receiver in the designer first."
+        onOpenPlay={onOpenPlay}
+      />
 
       <RoutePreviewModal
         route={preview}
