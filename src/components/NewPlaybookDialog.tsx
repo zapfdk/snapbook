@@ -1,11 +1,14 @@
 import { useEffect, useState } from 'react'
-import { ArrowRight, Download, Layers3, Upload } from 'lucide-react'
+import { ArrowRight, Check, Download, Layers3, Upload } from 'lucide-react'
 import { Modal } from './Modal'
+import { DEFAULT_ROUTE_LIBRARY } from '../data/routeLibrary'
+import type { PlaybookFill } from '../data/defaults'
+import { cx } from '../lib/files'
 
 interface NewPlaybookDialogProps {
   open: boolean
   onClose: () => void
-  onCreate: (name: string, team: string) => void
+  onCreate: (name: string, team: string, fill: PlaybookFill) => void
   onImport: () => void
   onBackup: () => void
 }
@@ -19,12 +22,14 @@ export function NewPlaybookDialog({
 }: NewPlaybookDialogProps) {
   const [name, setName] = useState('')
   const [team, setTeam] = useState('')
+  const [fill, setFill] = useState<PlaybookFill>('starter')
   const [error, setError] = useState('')
 
   useEffect(() => {
     if (!open) return
     setName('')
     setTeam('')
+    setFill('starter')
     setError('')
   }, [open])
 
@@ -34,7 +39,7 @@ export function NewPlaybookDialog({
       setError('Give the playbook a name.')
       return
     }
-    onCreate(trimmed, team.trim())
+    onCreate(trimmed, team.trim(), fill)
   }
 
   return (
@@ -92,6 +97,24 @@ export function NewPlaybookDialog({
           </label>
         </div>
 
+        <div>
+          <span className="label">Fill it with</span>
+          <div className="mt-2.5 grid gap-2 sm:grid-cols-2">
+            <FillOption
+              active={fill === 'starter'}
+              onClick={() => setFill('starter')}
+              title="Starter set"
+              detail={`Six formations, four tags and the ${DEFAULT_ROUTE_LIBRARY.length} route presets.`}
+            />
+            <FillOption
+              active={fill === 'clean'}
+              onClick={() => setFill('clean')}
+              title="Clean sheet"
+              detail="One lineup to start from, no tags and an empty route library."
+            />
+          </div>
+        </div>
+
         <div className="rounded-xl border border-line bg-ink-900 p-4">
           <div className="flex items-start gap-3">
             <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-lime/10 text-lime">
@@ -99,11 +122,11 @@ export function NewPlaybookDialog({
             </span>
             <div>
               <p className="text-[0.8rem] font-semibold text-chalk">
-                Starter formations and tags, no plays yet
+                No plays yet, whichever you pick
               </p>
               <p className="mt-1 text-[0.72rem] leading-relaxed text-slate-moss">
                 Add your first play from the Playbook screen. Everything you create is saved
-                automatically in this browser.
+                automatically in this browser, and tags and routes can be added later.
               </p>
             </div>
           </div>
@@ -133,5 +156,43 @@ export function NewPlaybookDialog({
         )}
       </div>
     </Modal>
+  )
+}
+
+function FillOption({
+  active,
+  onClick,
+  title,
+  detail,
+}: {
+  active: boolean
+  onClick: () => void
+  title: string
+  detail: string
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cx(
+        'flex items-start gap-2.5 rounded-xl border p-3 text-left transition-colors',
+        active
+          ? 'border-lime/70 bg-lime/[0.05] ring-1 ring-lime/30'
+          : 'border-line bg-ink-900 hover:border-[#3a4c3f]',
+      )}
+    >
+      <span
+        className={cx(
+          'mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-full border',
+          active ? 'border-lime bg-lime text-ink-950' : 'border-line text-transparent',
+        )}
+      >
+        <Check size={11} />
+      </span>
+      <span className="min-w-0">
+        <span className="block text-[0.8rem] font-semibold text-chalk">{title}</span>
+        <span className="mt-0.5 block text-[0.7rem] leading-relaxed text-slate-moss">{detail}</span>
+      </span>
+    </button>
   )
 }

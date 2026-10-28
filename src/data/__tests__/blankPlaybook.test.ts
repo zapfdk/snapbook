@@ -49,4 +49,16 @@ describe('createBlankPlaybook', () => {
   it('falls back to a readable name', () => {
     expect(createBlankPlaybook('   ', '').name).toBe('My flag playbook')
   })
+
+  it('keeps one lineup and nothing else on a clean sheet', () => {
+    const clean = createBlankPlaybook('Clean', '', 'clean')
+
+    expect(clean.plays).toEqual([])
+    expect(clean.categories).toEqual([])
+    expect(clean.routes).toEqual([])
+    // A lineup is what a play is built from, so one stays.
+    expect(clean.formations).toHaveLength(1)
+    expect(clean.formations[0].players).toHaveLength(5)
+    expect(clean.formations[0].players.every((player) => player.route === null)).toBe(true)
+  })
 })

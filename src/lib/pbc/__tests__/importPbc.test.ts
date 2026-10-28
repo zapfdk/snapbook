@@ -6,7 +6,7 @@ import {
   parsePbcArchive,
   readPbcContainer,
 } from '../importPbc'
-import { ROUTE_GROUP_COLORS, cloneRouteLibrary } from '../../../data/routeLibrary'
+import { ROUTE_GROUP_COLORS } from '../../../data/routeLibrary'
 import { category, formation, play, playbook, point } from '../../__tests__/snapbookTestUtils'
 import type { Player, Playbook } from '../../../types'
 import { buildForeignArchive } from './pbcFixtures'
@@ -122,11 +122,9 @@ describe('reading a .pbc file', () => {
 
     // The formation's own players carry the alignment, without a play's routes.
     expect(imported.formations[0].players.map((player) => player.route)).toEqual([null, null, null])
-    // Our own export writes an empty route library, so Snapbook's presets are
-    // the imported library, unchanged.
-    expect(imported.routes.map((route) => route.id)).toEqual(
-      cloneRouteLibrary().map((route) => route.id),
-    )
+    // Our own export writes an empty route library, and an import brings only
+    // what the file holds: the presets are offered when it is confirmed.
+    expect(imported.routes).toEqual([])
   })
 
   it('reads a file whose bows, motions and route names our export never writes', () => {
@@ -161,16 +159,12 @@ describe('reading a .pbc file', () => {
       { x: -4, y: 8 },
     ])
 
-    // The file's routes join Snapbook's presets in the library. Its own names
-    // for two of them clash with presets, so they take a suffix.
+    // The file's own routes are the imported library; Snapbook's presets are
+    // offered separately when the import is confirmed.
     const library = new Map(imported.routes.map((route) => [route.name, route]))
-    expect(imported.routes).toHaveLength(cloneRouteLibrary().length + 2)
-    expect(library.get('Post')?.points).toEqual([
-      { x: 0, y: 6 },
-      { x: 4, y: 14, curve: 1.8 },
-    ])
+    expect(imported.routes).toHaveLength(2)
 
-    const post = library.get('Post (2)')!
+    const post = library.get('Post')!
     expect(post.points).toEqual([{ x: 0, y: 6 }, { x: 0, y: 14, curve: 1.5 }])
     // A route that ends deep is grouped as one, because .pbc stores no group.
     expect(post.group).toBe('Deep')
@@ -178,7 +172,7 @@ describe('reading a .pbc file', () => {
     // .pbc keeps a wrist code beside a route and no other text, so it is the note.
     expect(post.note).toBe('PST')
 
-    const slant = library.get('Slant (2)')!
+    const slant = library.get('Slant')!
     expect(slant.points).toEqual([{ x: 0, y: 2 }, { x: 4, y: 5 }])
     expect(slant.group).toBe('Quick game')
     expect(slant.color).toBe(ROUTE_GROUP_COLORS['Quick game'])

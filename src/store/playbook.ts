@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { DEFAULT_PLAYBOOK, createBlankPlaybook } from '../data/defaults'
+import { DEFAULT_PLAYBOOK, createBlankPlaybook, type PlaybookFill } from '../data/defaults'
 import { cloneLibraryRoute, cloneRouteLibrary } from '../data/routeLibrary'
 import { applyRosterGroupPatch, type RosterGroupPatch } from '../lib/roster'
 import { applyFormationUpdate, cloneFormation } from '../lib/formations'
@@ -119,7 +119,7 @@ export interface PlaybookState {
   wrist: WristCoachSettings
   routeTree: RouteTreeSettings
   selectPlaybook: (id: string) => void
-  createPlaybook: (name: string, team: string) => string
+  createPlaybook: (name: string, team: string, fill?: PlaybookFill) => string
   duplicatePlaybook: (id?: string) => string | null
   deletePlaybook: (id?: string) => void
   addPlaybook: (playbook: Playbook) => string
@@ -277,8 +277,8 @@ export const usePlaybook = create<PlaybookState>()(
           })
         },
 
-        createPlaybook: (name, team) => {
-          const playbook = createBlankPlaybook(name, team)
+        createPlaybook: (name, team, fill) => {
+          const playbook = createBlankPlaybook(name, team, fill)
           set((state) => ({
             playbooks: [...state.playbooks, playbook],
             activeId: playbook.id,

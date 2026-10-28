@@ -9,7 +9,7 @@
  * unexpected is reported instead of guessed at.
  */
 
-import { cloneRouteLibrary, routeGroupColor } from '../../data/routeLibrary'
+import { routeGroupColor } from '../../data/routeLibrary'
 import {
   clampPlayerPoint,
   clampRoutePointForPlayer,
@@ -781,20 +781,20 @@ function groupForDepth(points: RoutePoint[]): RouteGroup {
 }
 
 /**
- * The imported playbook's route library: Snapbook's own presets, with the
- * routes Playbook Creator kept in the file joining them under the names the
- * file gave them.
+ * The imported playbook's route library: exactly the routes Playbook Creator
+ * kept in the file, under the names the file gave them. Snapbook's own presets
+ * are offered when the import is confirmed, not added here.
  */
 function toRouteLibrary(archive: PbcArchive): LibraryRoute[] {
-  const routes = cloneRouteLibrary()
-  const usedNames = new Set(routes.map((route) => route.name.toLowerCase()))
+  const routes: LibraryRoute[] = []
+  const usedNames = new Set<string>()
   for (const record of archive.routes) {
     const points = movementToPoints(record, RECEIVER_ORIGIN, 1)
     if (!points.length) continue
     const group = groupForDepth(points)
     routes.push({
       id: createId(),
-      // A route with no name of its own still needs one, and a name Snapbook
+      // A route with no name of its own still needs one, and a name the file
       // already uses takes a suffix.
       name: uniqueName(record.name, 'Imported route', usedNames),
       group,

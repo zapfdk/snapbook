@@ -326,8 +326,8 @@ function parseFilePoints(value: unknown, message: string): RoutePoint[] {
   })
 }
 
-function parseFileRoutes(value: unknown): LibraryRoute[] {
-  if (value === undefined) return cloneRouteLibrary(DEFAULT_ROUTE_LIBRARY)
+function parseFileRoutes(value: unknown, fallback: LibraryRoute[]): LibraryRoute[] {
+  if (value === undefined) return fallback
 
   const usedNames = new Set<string>()
   return asArray(value, 'The route library is malformed.').map((entry, index) => {
@@ -397,7 +397,7 @@ function assertReadableSnapbookVersion(file: UnknownRecord) {
   }
 }
 
-function parseSnapbookV2(raw: UnknownRecord): Playbook {
+function parseSnapbookV2(raw: UnknownRecord, options: ParseOptions): Playbook {
   const root = asRecord(raw.playbook, 'The playbook is missing.')
   const name = asString(root.name, 'The playbook name is missing.')
   const team = typeof root.team === 'string' ? root.team : ''
@@ -429,7 +429,7 @@ function parseSnapbookV2(raw: UnknownRecord): Playbook {
     categories.map((category) => [category.name.toLowerCase(), category]),
   )
 
-  const routes = parseFileRoutes(root.routes)
+  const routes = parseFileRoutes(root.routes, routeFallback(options))
 
   const formationEntries =
     root.formations === undefined
@@ -649,7 +649,19 @@ function parseSnapbookV2(raw: UnknownRecord): Playbook {
   }
 }
 
-export function parseSnapbook(text: string): Playbook {
+export interface ParseOptions {
+  /**
+   * What a file that names no route library is read with. Reading for display
+   * falls back to Snapbook's presets; an import asks the coach instead and
+   * starts from nothing.
+   */
+  routeLibrary?: 'presets' | 'file'
+}
+
+const routeFallback = (options: ParseOptions): LibraryRoute[] =>
+  options.routeLibrary === 'file' ? [] : cloneRouteLibrary(DEFAULT_ROUTE_LIBRARY)
+
+export function parseSnapbook(text: string, options: ParseOptions = {}): Playbook {
   // A UTF-8 BOM is legal in interchange files but JSON.parse rejects it.
   const source = text.charCodeAt(0) === 0xfeff ? text.slice(1) : text
   let parsed: unknown
@@ -664,7 +676,7 @@ export function parseSnapbook(text: string): Playbook {
 
   if (parsed.format === SNAPBOOK_FORMAT) {
     assertReadableSnapbookVersion(parsed)
-    return parseSnapbookV2(parsed)
+    return parseSnapbookV2(parsed, options)
   }
 
   if (typeof parsed.format === 'string' && parsed.format !== 'snapbook.v1') {
@@ -683,7 +695,7 @@ export function parseSnapbook(text: string): Playbook {
   const legacy = candidate as unknown as Playbook
   return {
     ...legacy,
-    routes: Array.isArray(legacy.routes) ? legacy.routes : cloneRouteLibrary(),
+    routes: Array.isArray(legacy.routes) ? legacy.routes : routeFallback(options),
   }
 }
 
@@ -696,7 +708,9 @@ export function exportNative(playbook: Playbook) {
 
 export async function importNative(file: File): Promise<Playbook> {
   const text = await file.text()
-  return parseSnapbook(text)
+  // An import brings only what the file holds; the confirmation offers the
+  // presets as a choice instead of adding them behind the coach's back.
+  return parseSnapbook(text, { routeLibrary: 'file' })
 }
 
 export const formatDate = (value: string) => {

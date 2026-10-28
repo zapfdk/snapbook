@@ -206,13 +206,22 @@ If the line is too different, it is kept as a simplified freehand route instead.
 is best-effort: clear the route or refine it with the normal route tools
 whenever the snap is not what you meant.
 
-**New playbook** starts a blank playbook with the six starter formations, the
-standard route library and standard tags. It joins your library and the
-playbook you have open is left untouched; the dialog still offers a backup
-download. **Import a playbook** (from the Export menu, the library dialog or
-the new-playbook dialog) adds the file as its own library entry the same way,
-as does **Edit a copy** on a shared link. It takes Snapbook JSON and Playbook
-Creator `.pbc` files, the latter after its password.
+**New playbook** asks what to fill the new playbook with: the **starter set**
+— six formations, four standard tags and the 18 route presets — or a **clean
+sheet**, which keeps one lineup so a play can be built straight away and leaves
+the tags and the route library empty. Either way there are no plays yet. It
+joins your library and the playbook you have open is left untouched; the dialog
+still offers a backup download.
+
+**Import a playbook** (from the Export menu, the library dialog or the
+new-playbook dialog) adds the file as its own library entry the same way, as
+does **Edit a copy** on a shared link. It takes Snapbook JSON and Playbook
+Creator `.pbc` files, the latter after its password. An import brings only what
+the file holds. Before it is added, the confirmation shows what came across and
+offers Snapbook's presets as a one-click addition, since a file that names no
+route library would otherwise open without any. A preset the file already draws
+is not added twice, so importing a full Snapbook backup leaves its library as it
+is.
 
 ## Team setup
 
@@ -230,8 +239,8 @@ format.
 
 ## Route and formation libraries
 
-Both libraries belong to the open playbook, so they travel in its backup and a
-new playbook starts from the standard set.
+Both libraries belong to the open playbook, so they travel in its backup; a new
+playbook starts from the standard set unless its clean sheet is chosen.
 
 **Route library** (Playbook → Route library) uses a visual editor. Add a new
 route, draw its points on the field, then drag the round handles to reshape it.
@@ -388,12 +397,14 @@ open alone:
 - Routes with their bows, and pre-snap motions — a route then begins where its
   motion ends, the same rule Snapbook draws by
 - Each play's tags, and the formation each play was drawn on
-- The playbook's own route library, beside Snapbook's presets
+- The playbook's own route library, under the names the file uses
 
 A Playbook Creator file stores tags as names only, so an imported tag takes
 Snapbook's default colour, and labels are cut to the four characters the file has
-room for. Its route library keeps the names the file uses, so two routes called
-`Post` can meet: the preset stays and the import arrives as `Post (2)`. A `.pbc`
+room for. Its route library keeps the names the file uses, and the presets are
+added only if they are asked for on import: a preset whose shape the file
+already draws is skipped, and one whose name is taken by a different shape takes
+a suffix such as `Post 2`. A `.pbc`
 route carries a wrist code rather than a coaching note, so the code becomes the
 note, and a route is grouped as Quick game, Intermediate or Deep by how far
 downfield it ends, a field the file does not store. The reader mirrors the writer

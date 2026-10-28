@@ -279,13 +279,25 @@ export const DEFAULT_PLAYBOOK: Playbook = {
   ],
 }
 
-export function createBlankPlaybook(name: string, teamName: string): Playbook {
+/**
+ * What a new playbook arrives with. `starter` is the full set a coach can start
+ * editing straight away; `clean` keeps one lineup, so the first play can still
+ * be built, and leaves tags and the route library empty.
+ */
+export type PlaybookFill = 'starter' | 'clean'
+
+export function createBlankPlaybook(
+  name: string,
+  teamName: string,
+  fill: PlaybookFill = 'starter',
+): Playbook {
+  const starter = fill !== 'clean'
   return {
     id: createId(),
     name: name.trim() || 'My flag playbook',
     team: teamName.trim(),
     level: '5v5',
-    formations: formations.map((formation) => ({
+    formations: (starter ? formations : formations.slice(0, 1)).map((formation) => ({
       ...formation,
       id: createId(),
       players: formation.players.map((player) => ({
@@ -295,8 +307,8 @@ export function createBlankPlaybook(name: string, teamName: string): Playbook {
         route: null,
       })),
     })),
-    categories: categories.map((category) => ({ ...category, id: createId() })),
-    routes: cloneRouteLibrary(DEFAULT_ROUTE_LIBRARY),
+    categories: starter ? categories.map((category) => ({ ...category, id: createId() })) : [],
+    routes: starter ? cloneRouteLibrary(DEFAULT_ROUTE_LIBRARY) : [],
     plays: [],
   }
 }

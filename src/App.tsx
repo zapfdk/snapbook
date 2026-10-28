@@ -23,6 +23,9 @@ import { selectActivePlaybook, usePlaybook } from './store/playbook'
 import { useCloudSync } from './hooks/useCloudSync'
 import { useServiceWorkerUpdate } from './hooks/useServiceWorkerUpdate'
 import { exportNative, importNative } from './lib/files'
+import { withPresetRoutes } from './lib/routeLibraryMerge'
+import { DEFAULT_ROUTE_LIBRARY } from './data/routeLibrary'
+import type { PlaybookFill } from './data/defaults'
 import { mergeSharedPlaybook } from './lib/mergePlaybook'
 import { SHARE_HASH_PREFIX, sharePlaybookFromHash } from './lib/share'
 import type { Playbook } from './types'
@@ -185,6 +188,7 @@ function LocalPlaybookApp() {
   const [libraryOpen, setLibraryOpen] = useState(false)
   const [toast, setToast] = useState<ToastMessage | null>(null)
   const [pendingImport, setPendingImport] = useState<PendingImport | null>(null)
+  const [includePresets, setIncludePresets] = useState(true)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const conflictOpened = useRef(false)
 
@@ -246,8 +250,8 @@ function LocalPlaybookApp() {
     setView('design')
   }
 
-  const createBlank = (name: string, team: string) => {
-    createPlaybook(name, team)
+  const createBlank = (name: string, team: string, fill: PlaybookFill) => {
+    createPlaybook(name, team, fill)
     setSelectedPlayId(null)
     setView('plays')
     setNewPlaybookOpen(false)
@@ -279,6 +283,7 @@ function LocalPlaybookApp() {
         return
       }
       const imported = await importNative(file)
+      setIncludePresets(true)
       setPendingImport({ fileName: file.name, playbook: imported })
     } catch (error) {
       notify(error instanceof Error ? error.message : 'Could not import that file.', 'error')
@@ -433,6 +438,7 @@ function LocalPlaybookApp() {
         onClose={() => setPbcImport(null)}
         onImported={(imported) => {
           if (!pbcImport) return
+          setIncludePresets(true)
           setPendingImport({ fileName: pbcImport.fileName, playbook: imported })
           setPbcImport(null)
         }}
@@ -473,11 +479,17 @@ function LocalPlaybookApp() {
               className="btn btn-primary"
               onClick={() => {
                 if (!pendingImport) return
-                addPlaybook(pendingImport.playbook)
+                const imported = includePresets
+                  ? {
+                      ...pendingImport.playbook,
+                      routes: withPresetRoutes(pendingImport.playbook.routes),
+                    }
+                  : pendingImport.playbook
+                addPlaybook(imported)
                 setSelectedPlayId(null)
                 setView('plays')
                 notify(
-                  `Added “${pendingImport.playbook.name}” with ${pendingImport.playbook.plays.length} plays.`,
+                  `Added “${imported.name}” with ${imported.plays.length} plays and ${imported.routes.length} routes.`,
                 )
                 setPendingImport(null)
               }}
@@ -495,8 +507,27 @@ function LocalPlaybookApp() {
             <p className="mt-1 text-[0.76rem] text-fog">
               {pendingImport.playbook.plays.length} plays ·{' '}
               {pendingImport.playbook.formations.length} formations ·{' '}
-              {pendingImport.playbook.categories.length} tags
+              {pendingImport.playbook.categories.length} tags ·{' '}
+              {pendingImport.playbook.routes.length} routes
             </p>
+            <label className="mt-3 flex cursor-pointer items-start gap-2.5 rounded-lg border border-line bg-ink-900/60 px-3 py-2.5">
+              <input
+                type="checkbox"
+                className="mt-0.5 h-4 w-4 accent-lime"
+                checked={includePresets}
+                onChange={(event) => setIncludePresets(event.target.checked)}
+              />
+              <span>
+                <span className="block text-[0.74rem] font-semibold text-chalk">
+                  Add Snapbook's {DEFAULT_ROUTE_LIBRARY.length} route presets
+                </span>
+                <span className="mt-0.5 block text-[0.68rem] leading-relaxed text-slate-moss">
+                  {pendingImport.playbook.routes.length
+                    ? 'The routes this file brings stay as they are, and a preset it already draws is not added twice.'
+                    : 'This file brings no routes of its own, so without this its route library stays empty.'}
+                </span>
+              </span>
+            </label>
             <p className="mt-3 text-[0.7rem] text-slate-moss">{pendingImport.fileName}</p>
           </div>
         )}
