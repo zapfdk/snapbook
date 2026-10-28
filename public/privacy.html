@@ -3,6 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- This page is a static file, so its policy is written here. It has no
+         scripts at all: the styles are the inline block below, the icon is the
+         only image, and every link is a navigation. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; form-action 'none'"
+    />
     <title>Privacy policy — Snapbook</title>
     <meta
       name="description"
