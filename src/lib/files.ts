@@ -706,7 +706,22 @@ export function exportNative(playbook: Playbook) {
   )
 }
 
+/**
+ * Import formats are small — a full playbook is a few hundred kilobytes — so a
+ * cap keeps a mistyped or hostile file from being read into memory at all.
+ */
+export const MAX_IMPORT_BYTES = 10 * 1024 * 1024
+
+export function assertImportSize(size: number): void {
+  if (size > MAX_IMPORT_BYTES) {
+    throw new Error(
+      'That file is over 10 MB, far larger than a Snapbook file. Check that you picked the right one.',
+    )
+  }
+}
+
 export async function importNative(file: File): Promise<Playbook> {
+  assertImportSize(file.size)
   const text = await file.text()
   // An import brings only what the file holds; the confirmation offers the
   // presets as a choice instead of adding them behind the coach's back.

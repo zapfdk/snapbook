@@ -22,7 +22,7 @@ import { SharedPlaybookView } from './views/SharedPlaybookView'
 import { selectActivePlaybook, usePlaybook } from './store/playbook'
 import { useCloudSync } from './hooks/useCloudSync'
 import { useServiceWorkerUpdate } from './hooks/useServiceWorkerUpdate'
-import { exportNative, importNative } from './lib/files'
+import { assertImportSize, exportNative, importNative } from './lib/files'
 import { withPresetRoutes } from './lib/routeLibraryMerge'
 import { DEFAULT_ROUTE_LIBRARY } from './data/routeLibrary'
 import type { PlaybookFill } from './data/defaults'
@@ -279,6 +279,7 @@ function LocalPlaybookApp() {
       // A .pbc file is encrypted, so the password dialog opens first and the
       // playbook it holds goes through the same confirmation as a JSON import.
       if (file.name.toLowerCase().endsWith('.pbc')) {
+        assertImportSize(file.size)
         setPbcImport({ fileName: file.name, bytes: new Uint8Array(await file.arrayBuffer()) })
         return
       }

@@ -432,18 +432,15 @@ that is not a playbook all say what they found. AES-256-GCM cannot tell a wrong
 password from a damaged file, so that message names both possibilities, and an
 empty field that meets a protected file says the file needs a password.
 
-## Reminders
+## Security
 
-Small things to pick up another time:
-
-- **Run a security review of the repository.** The Dropbox sign-in path has
-  been looked at — PKCE with no client secret, the OAuth `state` compared
-  against a sessionStorage record before the code is exchanged, the callback
-  query stripped from the URL afterwards, the access token in sessionStorage
-  and the refresh token in localStorage — and the source contains no HTML
-  injection sinks. Still to examine: the service worker's cache rules, the
-  import paths for untrusted `.snapbook.json` and `.pbc` files, dependencies,
-  the GitHub Actions workflow, and whether any secret ever reached git history.
+Snapbook is a static site with no backend, no account and no telemetry, so the
+valuable things are the playbook in `localStorage` and the Dropbox token when
+cloud sync is connected. The review of the service worker, the import paths for
+untrusted `.snapbook.json` and `.pbc` files, the dependencies, the deploy
+workflow, the Dropbox sign-in path and the git history — with what was found and
+what is still recommended — is in
+[docs/security-review.md](docs/security-review.md).
 
 ## Stack
 

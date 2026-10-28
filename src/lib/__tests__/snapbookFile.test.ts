@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import type { Playbook, Player } from '../../types'
 import {
+  MAX_IMPORT_BYTES,
+  assertImportSize,
   createSnapbookFile,
   parseSnapbook,
   serializeSnapbook,
@@ -312,5 +314,12 @@ describe('Snapbook file format', () => {
       'Route “Deep Cross” has no points.',
     )
     expect(() => parseSnapbook('{')).toThrow('That file is not valid JSON.')
+  })
+})
+
+describe('import size guard', () => {
+  it('refuses a file far larger than any Snapbook file', () => {
+    expect(() => assertImportSize(MAX_IMPORT_BYTES)).not.toThrow()
+    expect(() => assertImportSize(MAX_IMPORT_BYTES + 1)).toThrow(/over 10 MB/)
   })
 })
