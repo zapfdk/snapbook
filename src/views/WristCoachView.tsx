@@ -39,6 +39,97 @@ const PAGE_PRESETS = [
   { id: '210x297', label: 'A4, portrait · 210 × 297 mm', width: 210, height: 297 },
 ]
 
+type CardEdge = 'left' | 'right' | 'top' | 'bottom'
+
+/**
+ * Where a card dragged on the preview would land. Dropped on another card's
+ * middle it swaps with it; dropped on the seam along a card's edge it slots in
+ * there and the cards after it shift along.
+ */
+type CardDrop =
+  | { kind: 'swap'; index: number }
+  | { kind: 'insert'; index: number; edge: CardEdge }
+
+interface CardDrag {
+  id: string
+  /** The slot the drag started from. */
+  from: number
+  drop: CardDrop
+}
+
+/** How much of a card counts as its edge rather than its middle. */
+const CARD_EDGE = 0.18
+
+const SEAM_CLASS: Record<CardEdge, string> = {
+  left: 'left-0 top-0 bottom-0 w-[4px]',
+  right: 'right-0 top-0 bottom-0 w-[4px]',
+  top: 'top-0 left-0 right-0 h-[4px]',
+  bottom: 'bottom-0 left-0 right-0 h-[4px]',
+}
+
+function sameDrop(a: CardDrop, b: CardDrop): boolean {
+  if (a.kind === 'swap' && b.kind === 'swap') return a.index === b.index
+  if (a.kind === 'insert' && b.kind === 'insert') return a.index === b.index && a.edge === b.edge
+  return false
+}
+
+/**
+ * Reads the pointer over the printed cards. The middle of a card is a swap; its
+ * edge is the seam it shares with its neighbour, where the dragged card slots
+ * in. Outside every card — page margins, unused slots at the end of a sheet —
+ * the nearest seam wins, so appending a card still has somewhere to land.
+ */
+function cardDropAt(x: number, y: number, from: number): CardDrop {
+  const cards = Array.from(document.querySelectorAll<HTMLElement>('[data-preview-card]'))
+    .map((element) => ({
+      index: Number(element.dataset.previewCard),
+      rect: element.getBoundingClientRect(),
+    }))
+    .filter((card) => card.index !== from)
+
+  for (const { index, rect } of cards) {
+    if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) continue
+    const fx = (x - rect.left) / rect.width
+    const fy = (y - rect.top) / rect.height
+    if (fx <= CARD_EDGE) return { kind: 'insert', index, edge: 'left' }
+    if (fx >= 1 - CARD_EDGE) return { kind: 'insert', index: index + 1, edge: 'right' }
+    if (fy <= CARD_EDGE) return { kind: 'insert', index, edge: 'top' }
+    if (fy >= 1 - CARD_EDGE) return { kind: 'insert', index: index + 1, edge: 'bottom' }
+    return { kind: 'swap', index }
+  }
+
+  let best: CardDrop | null = null
+  let bestDistance = Number.POSITIVE_INFINITY
+  for (const { index, rect } of cards) {
+    const nearX = Math.min(Math.max(x, rect.left), rect.right)
+    const nearY = Math.min(Math.max(y, rect.top), rect.bottom)
+    const seams: Array<{ drop: CardDrop; distance: number }> = [
+      { drop: { kind: 'insert', index, edge: 'left' }, distance: Math.hypot(x - rect.left, y - nearY) },
+      { drop: { kind: 'insert', index: index + 1, edge: 'right' }, distance: Math.hypot(x - rect.right, y - nearY) },
+      { drop: { kind: 'insert', index, edge: 'top' }, distance: Math.hypot(x - nearX, y - rect.top) },
+      { drop: { kind: 'insert', index: index + 1, edge: 'bottom' }, distance: Math.hypot(x - nearX, y - rect.bottom) },
+    ]
+    for (const seam of seams) {
+      if (seam.distance < bestDistance) {
+        bestDistance = seam.distance
+        best = seam.drop
+      }
+    }
+  }
+
+  return best ?? { kind: 'swap', index: from }
+}
+
+/** The edge of one card that carries the insertion bar for a seam. */
+function seamOnCard(drop: { index: number; edge: CardEdge }, cardIndex: number, lastIndex: number): CardEdge | null {
+  const vertical = drop.edge === 'left' || drop.edge === 'right'
+  if (drop.index === cardIndex) return vertical ? 'left' : 'top'
+  // A seam past the final card has no card to the right of it, so it is drawn
+  // on the last card's outer edge instead.
+  if (drop.index === cardIndex + 1 && cardIndex === lastIndex) return vertical ? 'right' : 'bottom'
+  return null
+}
+
 export function WristCoachView({ onBack }: { onBack: () => void }) {
   const playbook = usePlaybook(selectActivePlaybook)
   const wrist = usePlaybook((state) => state.wrist)
@@ -50,9 +141,22 @@ export function WristCoachView({ onBack }: { onBack: () => void }) {
   const [query, setQuery] = useState('')
   const [exporting, setExporting] = useState(false)
   const [error, setError] = useState('')
-  /** The card being dragged, and where it would land in the list without it. */
+  /** The card being dragged in the card list, and where it would land. */
   const [dragging, setDragging] = useState<{ id: string; over: number } | null>(null)
+  /** The same, for a card dragged on the printed preview. */
+  const [cardDrag, setCardDrag] = useState<CardDrag | null>(null)
+  /**
+   * The preview drag is mirrored into a ref: a pointerup can arrive before the
+   * render that would carry the latest drop target, and dropping on a stale
+   * target would move the card somewhere the pointer never was.
+   */
+  const cardDragRef = useRef<CardDrag | null>(null)
   const listRef = useRef<HTMLDivElement>(null)
+
+  const rememberCardDrag = (drag: CardDrag | null) => {
+    cardDragRef.current = drag
+    setCardDrag(drag)
+  }
 
 
   const playsById = useMemo(
@@ -69,6 +173,11 @@ export function WristCoachView({ onBack }: { onBack: () => void }) {
     ? (wrist.selectedPlayIds.filter((id) => id !== dragging.id)[dragging.over] ?? null)
     : null
   const pages = useMemo(() => buildWristPages(selectedPlays, wrist), [selectedPlays, wrist])
+  const swapIndex =
+    cardDrag && cardDrag.drop.kind === 'swap' && cardDrag.drop.index !== cardDrag.from
+      ? cardDrag.drop.index
+      : null
+  const insertSeam = cardDrag && cardDrag.drop.kind === 'insert' ? cardDrag.drop : null
   const filtered = useMemo(() => {
     const term = query.toLowerCase().trim()
     return playbook.plays.filter(
@@ -141,6 +250,71 @@ export function WristCoachView({ onBack }: { onBack: () => void }) {
       event.currentTarget.releasePointerCapture(event.pointerId)
     }
     if (changed) setWristPlays(rest)
+  }
+
+  /**
+   * A card dragged on the preview reorders the same list the printed pages come
+   * from: dropped on another card it swaps with it, dropped on a seam it slots
+   * in there and everything after it shifts along.
+   */
+  const startPreviewDrag = (
+    event: PointerEvent<HTMLDivElement>,
+    play: Play,
+    index: number,
+  ) => {
+    // A touch drag would have to block scrolling to track the pointer, and the
+    // preview is the whole screen on a phone; touch keeps its scroll and uses
+    // the up/down buttons in the card list instead.
+    if (!event.isPrimary || event.button !== 0 || event.pointerType === 'touch') return
+    rememberCardDrag({ id: play.id, from: index, drop: { kind: 'swap', index } })
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId)
+    } catch {
+      // Synthetic pointers may not support capture; the card list still works.
+    }
+  }
+
+  const movePreviewDrag = (event: PointerEvent<HTMLDivElement>) => {
+    const drag = cardDragRef.current
+    if (!drag) return
+    const drop = cardDropAt(event.clientX, event.clientY, drag.from)
+    // The seams either side of the card it came from would leave it exactly
+    // where it is, so they get no target at all rather than a bar that lies.
+    const inert = drop.kind === 'insert' && (drop.index === drag.from || drop.index === drag.from + 1)
+    const next: CardDrop = inert ? { kind: 'swap', index: drag.from } : drop
+    if (!sameDrop(next, drag.drop)) rememberCardDrag({ ...drag, drop: next })
+  }
+
+  const endPreviewDrag = (event: PointerEvent<HTMLDivElement>) => {
+    const drag = cardDragRef.current
+    if (!drag) return
+    rememberCardDrag(null)
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+    const ids = wrist.selectedPlayIds
+    const from = ids.indexOf(drag.id)
+    if (from < 0) return
+    if (drag.drop.kind === 'swap') {
+      const to = drag.drop.index
+      if (to === from || to < 0 || to >= ids.length) return
+      const next = [...ids]
+      next[from] = ids[to]
+      next[to] = drag.id
+      setWristPlays(next)
+      return
+    }
+    const rest = ids.filter((id) => id !== drag.id)
+    // The seam is a position in the list as it stands, so a card lifted from
+    // further up shifts its own landing spot down by one.
+    const target = Math.min(rest.length, from < drag.drop.index ? drag.drop.index - 1 : drag.drop.index)
+    rest.splice(Math.max(0, target), 0, drag.id)
+    if (rest.some((id, index) => id !== ids[index])) setWristPlays(rest)
+  }
+
+  /** A cancelled gesture puts the cards back where they were. */
+  const cancelPreviewDrag = () => {
+    if (cardDragRef.current) rememberCardDrag(null)
   }
 
   return (
@@ -337,6 +511,12 @@ export function WristCoachView({ onBack }: { onBack: () => void }) {
             </div>
           )}
           {pages.length ? (
+            <p className="mx-auto mb-4 max-w-[1000px] text-[0.68rem] text-slate-moss">
+              Drag a card onto another card to swap them, or onto the edge between
+              two cards to slot it in there.
+            </p>
+          ) : null}
+          {pages.length ? (
             <div className="mx-auto grid max-w-[1000px] gap-6 sm:grid-cols-2">
               {pages.map((page) => (
                 <div key={page.index}>
@@ -372,14 +552,51 @@ export function WristCoachView({ onBack }: { onBack: () => void }) {
                         const label =
                           wrist.showCodeName && play.codeName ? play.codeName : play.name
                         const cardNumber = page.index * wrist.columns * wrist.rows + slot + 1
+                        const cardIndex = cardNumber - 1
+                        const seam = insertSeam
+                          ? seamOnCard(insertSeam, cardIndex, selectedPlays.length - 1)
+                          : null
                         return (
                           <div
                             key={play.id}
+                            data-preview-card={cardIndex}
+                            onPointerDown={(event) => startPreviewDrag(event, play, cardIndex)}
+                            onPointerMove={movePreviewDrag}
+                            onPointerUp={endPreviewDrag}
+                            onPointerCancel={cancelPreviewDrag}
                             className={cx(
-                              'relative min-h-0 min-w-0',
+                              'relative min-h-0 min-w-0 cursor-grab active:cursor-grabbing',
                               wrist.showCutLines && 'border border-[#e6e4d8]',
+                              cardDrag?.id === play.id && 'opacity-40',
+                              cardDrag && 'select-none',
                             )}
                           >
+                            {swapIndex === cardIndex && (
+                              <>
+                                <span
+                                  className="pointer-events-none absolute inset-0 z-20 border-2 border-lime"
+                                  aria-hidden
+                                />
+                                {/* Two-way arrows say the drop swaps the two cards. */}
+                                <span
+                                  className="pointer-events-none absolute inset-0 z-20 grid place-items-center"
+                                  aria-hidden
+                                >
+                                  <span className="grid h-7 w-7 place-items-center rounded-full bg-lime text-lime-ink shadow-[0_2px_10px_rgba(0,0,0,0.35)]">
+                                    <ArrowLeftRight size={14} strokeWidth={3} />
+                                  </span>
+                                </span>
+                              </>
+                            )}
+                            {seam && (
+                              <span
+                                className={cx(
+                                  'pointer-events-none absolute z-20 rounded-full bg-lime shadow-[0_0_0_1px_rgba(20,25,20,0.35)]',
+                                  SEAM_CLASS[seam],
+                                )}
+                                aria-hidden
+                              />
+                            )}
                             {wrist.showCardNumber && (
                               <span
                                 className="absolute left-[3%] top-[2%] z-10 font-bold text-[#9a978a]"
