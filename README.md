@@ -439,8 +439,14 @@ valuable things are the playbook in `localStorage` and the Dropbox token when
 cloud sync is connected. The review of the service worker, the import paths for
 untrusted `.snapbook.json` and `.pbc` files, the dependencies, the deploy
 workflow, the Dropbox sign-in path and the git history — with what was found and
-what is still recommended — is in
-[docs/security-review.md](docs/security-review.md).
+what changed — is in [docs/security-review.md](docs/security-review.md).
+
+The deployed build carries a Content-Security-Policy, injected at build time by
+[vite.config.ts](vite.config.ts) because GitHub Pages cannot set headers and the
+dev server needs inline scripts for HMR. It allows this origin, the two Dropbox
+API hosts and nothing else, so a new external service has to be added there or
+it will be refused by the browser. The deploy workflow pins its actions to
+commit SHAs.
 
 ## Stack
 

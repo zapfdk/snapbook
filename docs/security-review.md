@@ -5,6 +5,11 @@ worker, the import paths for untrusted `.snapbook.json` and `.pbc` files, the
 dependencies, the GitHub Actions workflow, the Dropbox sign-in path and the git
 history, as the reminder in the README asked.
 
+A second pass the same day closed the four open recommendations: jsPDF 4, a meta
+CSP, workflow pins and vitest 5. That pass is written up in
+[Follow-up pass](#follow-up-pass) at the end, and the findings below are marked
+with what actually shipped.
+
 ## What the app is
 
 Snapbook is a static site. There is no backend, no account and no telemetry: the
@@ -34,11 +39,11 @@ committed. Ran the test suite, which includes the malformed-file cases below.
 | # | Finding | Severity | Status |
 | --- | --- | --- | --- |
 | 1 | Imported files were read into memory with no size limit | Low | Fixed — a 10 MB cap rejects the file before it is read |
-| 2 | jsPDF 3.x carries published advisories | Low in practice | Open — needs a major upgrade |
-| 3 | No Content-Security-Policy | Low | Open — recommendation below |
-| 4 | Workflow actions pinned by major tag, not commit SHA | Low | Open — recommendation below |
+| 2 | jsPDF 3.x carries published advisories | Low in practice | Fixed — upgraded to 4.2.1, with a PDF test to catch a break |
+| 3 | No Content-Security-Policy | Low | Fixed — build-injected meta policy, verified in the built app |
+| 4 | Workflow actions pinned by major tag, not commit SHA | Low | Fixed — all four pinned to commit SHAs |
 | 5 | Dropbox refresh token lives in `localStorage` | Accepted risk | Unchanged, noted below |
-| 6 | Dev-only `tinypool` advisories through vitest | None for users | Open — cleared by a vitest upgrade |
+| 6 | Dev-only `tinypool` advisories through vitest | None for users | Fixed — vitest 5 no longer depends on tinypool |
 
 Nothing was found that lets a file, a share link or a Dropbox response run code,
 reach the network or overwrite another playbook.
@@ -54,7 +59,7 @@ from the `.pbc` path. A real playbook is a few hundred kilobytes, so the cap is
 generous. Covered by a test in
 [src/lib/__tests__/snapbookFile.test.ts](../src/lib/__tests__/snapbookFile.test.ts).
 
-### 2. jsPDF advisories — open
+### 2. jsPDF advisories — fixed
 
 `npm audit` reports seven advisories against `jspdf@3.x`, aggregated as one
 critical vulnerability. They concern areas Snapbook does not use: the `addJS`
@@ -68,35 +73,65 @@ advisory is therefore the one that could apply: a crafted playbook name could
 end up in the exported PDF's metadata. The effect is limited to the file the
 coach exports and opens themselves.
 
-The fix is `jspdf@4`, which `npm audit fix --force` installs as a breaking
-change. That was left out of the review because printouts are the app's main
-output and the repository has no automated check that a PDF still renders: the
-upgrade deserves its own pass that opens a wrist-coach sheet and a route tree
-afterwards.
+The fix is `jspdf@4`. The upgrade was held back because printouts are the app's
+main output and nothing in the repository checked that a PDF still renders, so
+the pass that took it did two things: it added
+[src/lib/pdf/__tests__/pdf.test.ts](../src/lib/pdf/__tests__/pdf.test.ts), which
+asserts both exports produce a valid header and trailer, one page object per
+sheet, and no markup from a hostile playbook name in the file; and it rendered a
+wrist-coach sheet and a route tree with 4.2.1 and looked at them. Nothing in the
+app's API surface changed — `setProperties`, `text`, `line`, `rect`, `triangle`,
+`output` and `save` all behave as before — and `npm audit --omit=dev` is now
+clean.
 
-### 3. Content-Security-Policy — recommendation
+### 3. Content-Security-Policy — fixed
 
-There is no CSP. GitHub Pages cannot set response headers, so the only option is
-a `<meta http-equiv="Content-Security-Policy">` in [index.html](../index.html)
-and [public/privacy.html](../public/privacy.html). A working policy needs at
-least `default-src 'self'`, `style-src 'self' 'unsafe-inline'` (the app uses
-inline style attributes for player colours), `img-src 'self' data:` (the icon
-sprite and generated images), `connect-src 'self' https://api.dropboxapi.com
-https://content.dropboxapi.com` and `base-uri 'none'`. It has to be verified
-against the Dropbox sign-in return and the service worker before shipping, since
-a wrong policy breaks both quietly.
+GitHub Pages cannot set response headers, so the policy lives in the document.
+It is not written into [index.html](../index.html) because `vite dev` needs an
+inline preamble script and a WebSocket for HMR, both of which the policy
+forbids; a small plugin in [vite.config.ts](../vite.config.ts) injects the meta
+tag into the built page instead. Development runs without a policy, the deployed
+build enforces one:
+
+```
+default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline';
+img-src 'self' data: blob:; font-src 'self';
+connect-src 'self' https://api.dropboxapi.com https://content.dropboxapi.com;
+worker-src 'self'; manifest-src 'self'; object-src 'none';
+base-uri 'none'; form-action 'none'
+```
+
+`style-src` needs `'unsafe-inline'` because React writes player colours into
+style attributes, which the CSP treats as inline styles. `img-src` needs `data:`
+and `blob:` for the icon sprite and generated images. [public/privacy.html](../public/privacy.html)
+is a static file with no scripts, so it carries its own much tighter policy:
+`default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:`.
+
+One build setting exists for the policy: `assetsInlineLimit` keeps `.woff2`
+files out of the CSS as `data:` URIs. Vite would otherwise inline the 1.6 kB
+JetBrains Mono subset, and `font-src 'self'` would then refuse it at runtime —
+which is how the first attempt at this policy failed in the browser.
+
+Verified against the built site, not the dev server: the app loads with no
+policy violations, every font arrives as a file, an off-origin `fetch` and an
+off-origin image are refused with the expected directive named, a `POST` to
+`api.dropboxapi.com` is allowed through (it answers 400 rather than being
+blocked), the OAuth return URL still opens the shell under the service worker,
+a PDF exports, and the privacy page renders with its styles intact.
 
 Why it matters more than it first seems: with no injection sink in the source
 today, a CSP is not closing a known hole — it is the layer that keeps one bug,
 or one compromised dependency, from reaching the Dropbox refresh token in
 `localStorage`.
 
-### 4. Workflow pinning — recommendation
+### 4. Workflow pinning — fixed
 
-[.github/workflows/deploy.yml](../.github/workflows/deploy.yml) uses
+[.github/workflows/deploy.yml](../.github/workflows/deploy.yml) used
 `actions/checkout@v4`, `actions/setup-node@v4`, `actions/upload-pages-artifact@v3`
-and `actions/deploy-pages@v4`. A tag can be moved and a tag can be mistyped;
-pinning each action to a commit SHA removes that supply-chain step. The rest of
+and `actions/deploy-pages@v4`. A tag can be moved and a tag can be mistyped, so
+each action is now pinned to a commit SHA read from the action's own repository,
+with the version in a trailing comment: checkout and setup-node `v4.4.0`,
+upload-pages-artifact `v3.0.1` and deploy-pages `v4.0.5`. The rest of
 the workflow is in good shape: `permissions` grants only `contents: read`,
 `pages: write` and `id-token: write`; `npm ci` installs from the lockfile; and
 the Dropbox app key comes from `vars`, a public repository variable, not from a
@@ -113,12 +148,13 @@ sign-in again — is what the feature is for, and the token is limited to the
 `app_folder` scope it was granted. The mitigation that matters is finding 3.
 Tokens never appear in URLs, logs or the exported files.
 
-### 6. Development dependencies — noted
+### 6. Development dependencies — fixed
 
-`tinypool` advisories (through `vitest`) describe prototype pollution in worker
-options that can lead to code execution in the test runner. It is a dev
-dependency: it never reaches the built site. It clears with a vitest major
-upgrade.
+`tinypool` advisories described prototype pollution in worker options that could
+lead to code execution in the test runner. It was a dev dependency, never part
+of the built site, and it cleared with the move to `vitest@5`, which no longer
+depends on `tinypool` at all. All 301 existing tests pass on the new runner, and
+`npm audit` is clean for the whole tree.
 
 ## What checked out
 
@@ -164,9 +200,24 @@ everything else is bundled at build time. The two external links
 (the Dropbox App Console and the GitHub issue tracker) are ordinary links, and
 the App Console one carries `rel="noreferrer"`.
 
-## Recommended next steps
+## Follow-up pass
 
-1. Upgrade to `jspdf@4` and check a wrist-coach sheet and a route tree by eye.
-2. Add and verify a meta CSP, including the Dropbox return and offline reload.
-3. Pin the four workflow actions to commit SHAs.
-4. Upgrade `vitest` when convenient to clear the dev-only advisories.
+The same day, the four open recommendations were closed rather than carried:
+
+| Finding | Change | Verified by |
+| --- | --- | --- |
+| 2 | `jspdf@4.2.1` | a new PDF structure test, plus a rendered wrist-coach sheet and route tree |
+| 3 | meta CSP injected at build, own policy on the privacy page | the built site loaded in a browser, with positive and negative checks above |
+| 4 | four actions pinned to commit SHAs | the SHAs read from `git ls-remote` of each action repository |
+| 6 | `vitest@5.0.5` | the existing suite, 301 tests |
+
+What is deliberately still open: finding 5, the refresh token in
+`localStorage`, which is an accepted trade for sync surviving a reload. The CSP
+is now the control that limits what a script on the origin could reach.
+
+Two things to keep in mind for later changes. The policy in
+[vite.config.ts](../vite.config.ts) has to grow with any new origin the app
+talks to — a second sync provider, an AI endpoint, analytics — otherwise it
+fails closed and the feature looks broken. And the PDF test is structural, not
+visual: it catches a library upgrade that stops producing pages, not one that
+moves a line, so a printout still deserves a look after touching the exporters.
