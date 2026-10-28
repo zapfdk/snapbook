@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { Fragment, useMemo, useRef, useState, type PointerEvent } from 'react'
 import {
   ArrowDown,
   ArrowLeftRight,
@@ -40,6 +40,10 @@ export function WristCoachView({ onBack }: { onBack: () => void }) {
   const [query, setQuery] = useState('')
   const [exporting, setExporting] = useState(false)
   const [error, setError] = useState('')
+  /** The card being dragged, and where it would land in the list without it. */
+  const [dragging, setDragging] = useState<{ id: string; over: number } | null>(null)
+  const listRef = useRef<HTMLDivElement>(null)
+
 
   const playsById = useMemo(
     () => new Map(playbook.plays.map((play) => [play.id, play])),
@@ -48,6 +52,12 @@ export function WristCoachView({ onBack }: { onBack: () => void }) {
   const selectedPlays = wrist.selectedPlayIds
     .map((id) => playsById.get(id))
     .filter((play): play is Play => Boolean(play))
+
+  // The card the dragged one would land in front of, or null for the end of the
+  // list. The rows themselves stay put, so the drop line is what moves.
+  const dropBeforeId = dragging
+    ? (wrist.selectedPlayIds.filter((id) => id !== dragging.id)[dragging.over] ?? null)
+    : null
   const pages = useMemo(() => buildWristPages(selectedPlays, wrist), [selectedPlays, wrist])
   const filtered = useMemo(() => {
     const term = query.toLowerCase().trim()
@@ -84,6 +94,45 @@ export function WristCoachView({ onBack }: { onBack: () => void }) {
     }, 30)
   }
 
+  const startCardDrag = (event: PointerEvent<HTMLSpanElement>, id: string) => {
+    if (!event.isPrimary) return
+    if (!listRef.current) return
+    const index = wrist.selectedPlayIds.indexOf(id)
+    const rest = wrist.selectedPlayIds.filter((playId) => playId !== id)
+    setDragging({ id, over: index < 0 ? rest.length : index })
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId)
+    } catch {
+      // Synthetic pointers may not support capture; the buttons still reorder.
+    }
+  }
+
+  /** The insertion point is how many of the other cards the pointer has passed. */
+  const moveCardDrag = (event: PointerEvent<HTMLSpanElement>) => {
+    if (!dragging) return
+    const rows = listRef.current?.querySelectorAll<HTMLElement>('[data-card-row]')
+    if (!rows) return
+    const over = Array.from(rows)
+      .filter((row) => row.dataset.cardRow !== dragging.id)
+      .filter((row) => {
+        const rect = row.getBoundingClientRect()
+        return event.clientY > (rect.top + rect.bottom) / 2
+      }).length
+    if (over !== dragging.over) setDragging({ ...dragging, over })
+  }
+
+  const endCardDrag = (event: PointerEvent<HTMLSpanElement>) => {
+    if (!dragging) return
+    const rest = wrist.selectedPlayIds.filter((id) => id !== dragging.id)
+    rest.splice(dragging.over, 0, dragging.id)
+    const changed = rest.some((id, index) => id !== wrist.selectedPlayIds[index])
+    setDragging(null)
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+    if (changed) setWristPlays(rest)
+  }
+
   return (
     <div className="flex min-h-[calc(100vh-68px)] flex-col xl:h-[calc(100vh-68px)] xl:flex-row">
       <aside className="order-3 w-full shrink-0 overflow-y-auto border-t border-line bg-ink-900/60 p-4 xl:order-1 xl:w-[300px] xl:border-b-0 xl:border-r xl:border-t-0 xl:p-5">
@@ -104,58 +153,86 @@ export function WristCoachView({ onBack }: { onBack: () => void }) {
           The order here is the order printed on your wrist coach.
         </p>
 
-        <div className="mt-4 grid gap-1.5">
+        <div
+          ref={listRef}
+          className={cx('mt-4 grid gap-1.5', dragging && 'select-none')}
+        >
           {selectedPlays.length ? (
             selectedPlays.map((play, index) => (
-              <div
-                key={play.id}
-                className="group flex items-center gap-2 rounded-lg border border-line bg-ink-850 px-2 py-1.5"
-              >
-                <GripVertical size={13} className="shrink-0 text-ink-600" />
-                <span className="w-5 shrink-0 font-mono text-[0.62rem] text-slate-moss">
-                  {String(index + 1).padStart(2, '0')}
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[0.72rem] font-semibold text-chalk">
-                    {play.name}
-                  </span>
-                  {play.codeName && (
-                    <span className="block font-mono text-[0.56rem] uppercase tracking-[0.08em] text-lime/75">
-                      {play.codeName}
-                    </span>
+              <Fragment key={play.id}>
+                {dragging && dropBeforeId === play.id && (
+                  <div className="h-0.5 rounded-full bg-lime/70" aria-hidden />
+                )}
+                <div
+                  data-card-row={play.id}
+                  className={cx(
+                    'group flex items-center gap-2 rounded-lg border px-2 py-1.5',
+                    dragging?.id === play.id
+                      ? 'border-lime/60 bg-lime/[0.08] opacity-70'
+                      : 'border-line bg-ink-850',
                   )}
-                </span>
-                <div className="flex shrink-0 items-center">
-                  <button
-                    className="icon-btn !h-6 !w-6 disabled:opacity-25"
-                    onClick={() => moveWristPlay(play.id, -1)}
-                    disabled={index === 0}
-                    aria-label="Move up"
+                >
+                  <span
+                    role="button"
+                    tabIndex={-1}
+                    aria-label={`Drag ${play.name} to reorder`}
+                    title="Drag to reorder"
+                    className="shrink-0 cursor-grab touch-none text-ink-600 hover:text-slate-moss active:cursor-grabbing"
+                    onPointerDown={(event) => startCardDrag(event, play.id)}
+                    onPointerMove={moveCardDrag}
+                    onPointerUp={endCardDrag}
+                    onPointerCancel={endCardDrag}
                   >
-                    <ArrowUp size={12} />
-                  </button>
-                  <button
-                    className="icon-btn !h-6 !w-6 disabled:opacity-25"
-                    onClick={() => moveWristPlay(play.id, 1)}
-                    disabled={index === selectedPlays.length - 1}
-                    aria-label="Move down"
-                  >
-                    <ArrowDown size={12} />
-                  </button>
-                  <button
-                    className="icon-btn !h-6 !w-6 hover:!text-coral"
-                    onClick={() => toggleWristPlay(play.id)}
-                    aria-label="Remove from wrist coach"
-                  >
-                    <X size={12} />
-                  </button>
+                    <GripVertical size={13} />
+                  </span>
+                  <span className="w-5 shrink-0 font-mono text-[0.62rem] text-slate-moss">
+                    {String(index + 1).padStart(2, '0')}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[0.72rem] font-semibold text-chalk">
+                      {play.name}
+                    </span>
+                    {play.codeName && (
+                      <span className="block font-mono text-[0.56rem] uppercase tracking-[0.08em] text-lime/75">
+                        {play.codeName}
+                      </span>
+                    )}
+                  </span>
+                  <div className="flex shrink-0 items-center">
+                    <button
+                      className="icon-btn !h-6 !w-6 disabled:opacity-25"
+                      onClick={() => moveWristPlay(play.id, -1)}
+                      disabled={index === 0}
+                      aria-label="Move up"
+                    >
+                      <ArrowUp size={12} />
+                    </button>
+                    <button
+                      className="icon-btn !h-6 !w-6 disabled:opacity-25"
+                      onClick={() => moveWristPlay(play.id, 1)}
+                      disabled={index === selectedPlays.length - 1}
+                      aria-label="Move down"
+                    >
+                      <ArrowDown size={12} />
+                    </button>
+                    <button
+                      className="icon-btn !h-6 !w-6 hover:!text-coral"
+                      onClick={() => toggleWristPlay(play.id)}
+                      aria-label="Remove from wrist coach"
+                    >
+                      <X size={12} />
+                    </button>
+                  </div>
                 </div>
-              </div>
+              </Fragment>
             ))
           ) : (
             <div className="rounded-xl border border-dashed border-line px-3 py-6 text-center">
               <p className="text-[0.72rem] text-slate-moss">No cards selected yet.</p>
             </div>
+          )}
+          {dragging && !dropBeforeId && (
+            <div className="h-0.5 rounded-full bg-lime/70" aria-hidden />
           )}
         </div>
 

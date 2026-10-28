@@ -412,11 +412,6 @@ empty field that meets a protected file says the file needs a password.
 
 Small things to pick up another time:
 
-- **The drag handles in the wrist coach card list do not drag.** Every card in
-  the export view shows a grip icon, but the order can only be changed with the
-  up and down buttons beside it, so the grip reads as a control that does
-  nothing. Dragging a card — and dropping it between two others — should reorder
-  the wrist-coach pages the same way the buttons do.
 - **Wrist coach pages should start in landscape.** The page-size presets and the
   default 100 × 150 mm sheet are all portrait, while the route tree opens in
   landscape. Flipping the dimensions already works — the swap button beside the
