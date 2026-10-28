@@ -412,10 +412,6 @@ empty field that meets a protected file says the file needs a password.
 
 Small things to pick up another time:
 
-- **The arrow at the end of a route looks like it sits behind the line.** A
-  route draws its path and then the arrowhead at the same endpoint, so the
-  round stroke cap and the arrow overlap and the finish reads oddly. The arrow
-  should sit on the end of the line without the line showing through it.
 - **The drag handles in the wrist coach card list do not drag.** Every card in
   the export view shows a grip icon, but the order can only be changed with the
   up and down buttons beside it, so the grip reads as a control that does

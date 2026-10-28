@@ -181,6 +181,13 @@ export const MOTION_DASH = '0.5 0.28'
 export const OPTION_ROUTE_DASH = '0.04 0.26'
 
 /**
+ * How far inside the arrowhead the stroke stops. Near the tip the head is
+ * narrower than the stroke's round cap, so a stroke that reached the tip poked
+ * out around the arrow's own point and the head read as if drawn behind it.
+ */
+export const ARROW_STROKE_INSET = 0.55
+
+/**
  * The points a route is drawn with, as offsets from the origin they are
  * measured from. A route can legitimately point past the field edge: flipping
  * one mirrors it over the far edge, and a library route can be applied to any
@@ -200,9 +207,9 @@ export function pathShape(
   if (!points.length) return null
   const start = toSvg(startField)
   let previousField = startField
-  const parts = [`M ${start.x.toFixed(3)} ${start.y.toFixed(3)}`]
   let tangent = { x: 0, y: -1 }
   let end = start
+  const segments: { control: Point | null; end: Point }[] = []
 
   for (const point of points) {
     const absolute = offsetPoint(origin, point)
@@ -210,12 +217,10 @@ export function pathShape(
     const controlField = segmentControl(previousField, absolute, point.curve)
     if (controlField) {
       const control = toSvg(controlField)
-      parts.push(
-        `Q ${control.x.toFixed(3)} ${control.y.toFixed(3)} ${end.x.toFixed(3)} ${end.y.toFixed(3)}`,
-      )
+      segments.push({ control, end })
       tangent = { x: end.x - control.x, y: end.y - control.y }
     } else {
-      parts.push(`L ${end.x.toFixed(3)} ${end.y.toFixed(3)}`)
+      segments.push({ control: null, end })
       const previous = toSvg(previousField)
       tangent = { x: end.x - previous.x, y: end.y - previous.y }
     }
@@ -225,6 +230,22 @@ export function pathShape(
   const magnitude = Math.hypot(tangent.x, tangent.y) || 1
   const ux = tangent.x / magnitude
   const uy = tangent.y / magnitude
+
+  // The stroke ends inside the head rather than at its point, so the cap sits
+  // under the arrow instead of showing through it. A very short last segment
+  // keeps most of its length.
+  const inset = Math.min(ARROW_STROKE_INSET, magnitude * 0.4)
+  const strokeEnd = { x: end.x - ux * inset, y: end.y - uy * inset }
+  const parts = [`M ${start.x.toFixed(3)} ${start.y.toFixed(3)}`]
+  segments.forEach((segment, index) => {
+    const target = index === segments.length - 1 ? strokeEnd : segment.end
+    parts.push(
+      segment.control
+        ? `Q ${segment.control.x.toFixed(3)} ${segment.control.y.toFixed(3)} ${target.x.toFixed(3)} ${target.y.toFixed(3)}`
+        : `L ${target.x.toFixed(3)} ${target.y.toFixed(3)}`,
+    )
+  })
+
   const size = 0.95
   const spread = 0.52
   const base = { x: end.x - ux * size, y: end.y - uy * size }

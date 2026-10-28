@@ -202,7 +202,9 @@ describe('motions and option routes', () => {
       points: [{ x: -6, y: 0 }, { x: -6, y: 2 }],
     })
 
-    expect(shape?.d).toBe('M 23.500 17.500 L 17.500 17.500 L 17.500 15.500')
+    // The stroke ends inside the arrowhead, so it stops 0.55 short of the point.
+    expect(shape?.d).toBe('M 23.500 17.500 L 17.500 17.500 L 17.500 16.050')
+    expect(shape?.end.y).toBeCloseTo(15.5)
     expect(shape?.arrow.split(' ')).toHaveLength(3)
   })
 
@@ -216,7 +218,7 @@ describe('motions and option routes', () => {
     expect(routeOrigin(receiver)).toEqual(receiver.pos)
 
     const shape = routeShape(shifted, { id: 'route', points: [{ x: 0, y: 4 }] })
-    expect(shape?.d).toBe('M 22.500 15.500 L 22.500 11.500')
+    expect(shape?.d).toBe('M 22.500 15.500 L 22.500 12.050')
   })
 
   it('carries the whole route when the motion shifts', () => {
@@ -281,10 +283,11 @@ describe('option branches', () => {
     const shapes = optionShapes(centre, route)
 
     expect(shapes).toHaveLength(2)
-    // From route point (4, 8) out to (8, 8), in SVG coordinates.
-    expect(shapes[0].d).toBe('M 16.500 9.500 L 20.500 9.500')
+    // From route point (4, 8) out to (8, 8), in SVG coordinates, stopping just
+    // inside the arrowhead like a full route does.
+    expect(shapes[0].d).toBe('M 16.500 9.500 L 19.950 9.500')
     // A second branch leaves the first route point (0, 3) instead.
-    expect(shapes[1].d).toBe('M 12.500 14.500 L 8.500 11.500')
+    expect(shapes[1].d).toBe('M 12.500 14.500 L 8.940 11.830')
     expect(shapes.every((shape) => shape.arrow.split(' ').length === 3)).toBe(true)
   })
 
@@ -315,7 +318,7 @@ describe('option branches', () => {
 
     // Route point (0, 3) now sits at (0, 4), so the branch leaves there and
     // ends one yard past where the same option would sit without the shift.
-    expect(branch.d).toBe('M 12.500 13.500 L 14.500 10.500')
+    expect(branch.d).toBe('M 12.500 13.500 L 14.195 10.958')
   })
 
   it('draws a branch inside the field even when its points run past the edge', () => {
@@ -330,8 +333,10 @@ describe('option branches', () => {
       options: [{ id: 'wide', from: 0, points: [{ x: 8, y: 4 }] }],
     })
 
-    // The option's point is pulled back to the right sideline for drawing.
-    expect(shapes[0].d).toBe('M 23.500 14.500 L 24.900 13.500')
+    // The option's point is pulled back to the right sideline for drawing, with
+    // only 0.45 of this short last segment left for the stroke.
+    expect(shapes[0].end.x).toBeCloseTo(24.9)
+    expect(shapes[0].d).toBe('M 23.500 14.500 L 24.452 13.820')
   })
 })
 

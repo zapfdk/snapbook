@@ -113,18 +113,29 @@ function drawRoute(
   doc.setLineJoin('round')
   doc.setLineDashPattern(dash ?? [], 0)
 
-  const mapped = sampled.route.map((point) => ({ x: map.px(point.x), y: map.py(point.y) }))
-  for (let index = 1; index < mapped.length; index += 1) {
-    doc.line(mapped[index - 1].x, mapped[index - 1].y, mapped[index].x, mapped[index].y)
-  }
-  doc.setLineDashPattern([], 0)
-
   const end = { x: map.px(sampled.end.x), y: map.py(sampled.end.y) }
   const tangent = sampled.tangent
   const length = Math.hypot(tangent.x, tangent.y) || 1
   const ux = tangent.x / length
   const uy = tangent.y / length
   const size = Math.max(0.7, map.size * 0.042)
+
+  // As on screen, the stroke stops inside the head so its round cap cannot be
+  // seen around the arrow's point. In PDF space y grows downward.
+  const mapped = sampled.route.map((point) => ({ x: map.px(point.x), y: map.py(point.y) }))
+  const tail = mapped[mapped.length - 1]
+  const before = mapped[mapped.length - 2]
+  if (before) {
+    const fromTail = Math.hypot(before.x - tail.x, before.y - tail.y)
+    const inset = Math.min(size * 0.55, fromTail * 0.45)
+    tail.x -= ux * inset
+    tail.y += uy * inset
+  }
+  for (let index = 1; index < mapped.length; index += 1) {
+    doc.line(mapped[index - 1].x, mapped[index - 1].y, mapped[index].x, mapped[index].y)
+  }
+  doc.setLineDashPattern([], 0)
+
   const base = { x: end.x - ux * size, y: end.y + uy * size }
   const spread = size * 0.5
   const left = { x: base.x - uy * spread, y: base.y - ux * spread }

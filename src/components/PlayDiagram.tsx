@@ -124,7 +124,7 @@ export const PlayDiagram = memo(function PlayDiagram({
               strokeLinejoin="round"
               strokeDasharray={MOTION_DASH}
             />
-            <polygon points={shape.arrow} fill={color} opacity={0.85} />
+            <polygon points={shape.arrow} fill={color} />
           </g>
         )
       })}
@@ -161,7 +161,7 @@ export const PlayDiagram = memo(function PlayDiagram({
                   strokeLinejoin="round"
                   strokeDasharray={OPTION_ROUTE_DASH}
                 />
-                <polygon points={option.arrow} fill={color} opacity={0.9} />
+                <polygon points={option.arrow} fill={color} />
               </g>
             ))}
           </g>

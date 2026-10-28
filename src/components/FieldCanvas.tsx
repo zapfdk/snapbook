@@ -750,7 +750,7 @@ export function FieldCanvas({
                 strokeLinejoin="round"
                 strokeDasharray={MOTION_DASH}
               />
-              <polygon points={shape.arrow} fill={player.color} opacity={0.85} />
+              <polygon points={shape.arrow} fill={player.color} />
               {selectable && hitPath(player, shape.d, 'motion', `hit-motion-${player.id}`)}
             </g>
           )
@@ -800,7 +800,7 @@ export function FieldCanvas({
                     strokeLinejoin="round"
                     strokeDasharray={OPTION_ROUTE_DASH}
                   />
-                  <polygon points={branch.arrow} fill={player.color} opacity={0.9} />
+                  <polygon points={branch.arrow} fill={player.color} />
                 </g>
               ))}
               {selectable && shape && hitPath(player, shape.d, 'route', `hit-route-${player.id}`)}
