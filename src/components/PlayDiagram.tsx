@@ -25,6 +25,8 @@ interface PlayDiagramProps {
   strokeScale?: number
   routeColor?: boolean
   ariaLabel?: string
+  /** Fills the box exactly, for a card that wants the whole area covered. */
+  stretch?: boolean
 }
 
 export const PlayDiagram = memo(function PlayDiagram({
@@ -39,6 +41,7 @@ export const PlayDiagram = memo(function PlayDiagram({
   strokeScale = 1,
   routeColor = true,
   ariaLabel,
+  stretch = false,
 }: PlayDiagramProps) {
   const ink = paper ? '#171b16' : dark ? '#e8efe6' : '#8aa394'
   const faint = paper ? '#d9d7ca' : dark ? '#32513f' : '#dce7de'
@@ -47,6 +50,7 @@ export const PlayDiagram = memo(function PlayDiagram({
   return (
     <svg
       viewBox={`0 0 ${FIELD_WIDTH} ${FIELD_HEIGHT}`}
+      preserveAspectRatio={stretch ? 'none' : undefined}
       className={className}
       role="img"
       aria-label={ariaLabel ?? 'Play diagram'}

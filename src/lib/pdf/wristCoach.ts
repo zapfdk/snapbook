@@ -28,9 +28,12 @@ const FIELD = 25
 const LOS = 17.5
 
 interface FieldMap {
-  size: number
   x: number
   y: number
+  width: number
+  height: number
+  /** The shorter side: markers, arrowheads and stroke weights follow it. */
+  size: number
   px: (x: number) => number
   py: (y: number) => number
 }
@@ -77,16 +80,16 @@ function drawFieldLines(doc: jsPDF, map: FieldMap, fieldLines: boolean) {
   doc.setLineWidth(0.08)
   for (const yards of [15, 10, 5, -5]) {
     const y = map.py(yards)
-    doc.line(map.x, y, map.x + map.size, y)
+    doc.line(map.x, y, map.x + map.width, y)
   }
   doc.setDrawColor(150, 148, 138)
   doc.setLineWidth(0.12)
   doc.setLineDashPattern([0.55, 0.4], 0)
-  doc.line(map.x, map.py(0), map.x + map.size, map.py(0))
+  doc.line(map.x, map.py(0), map.x + map.width, map.py(0))
   doc.setLineDashPattern([], 0)
   doc.setDrawColor(224, 222, 210)
   doc.setLineWidth(0.08)
-  doc.rect(map.x, map.y, map.size, map.size)
+  doc.rect(map.x, map.y, map.width, map.height)
 }
 
 /** Dotted for an option branch, long dashes for a motion, in millimetres. */
@@ -231,30 +234,21 @@ function drawCard(
   ink: [number, number, number],
   inkHex: string,
 ) {
-  const pad = Math.min(cell.width, cell.height) * 0.045
-  const labelBand = Math.min(cell.height * 0.2, 10)
-  const availableW = cell.width - pad * 2
-  const availableH = cell.height - pad * 2 - labelBand
-  const size = Math.max(4, Math.min(availableW, availableH))
-  const diagramX = cell.x + (cell.width - size) / 2
-  const diagramY = cell.y + pad + (availableH - size) / 2
-
+  const shorter = Math.min(cell.width, cell.height)
+  // The field fills the whole card: a wide wrist card gets a wide field, and the
+  // yard lines still give the routes their reference.
   const map: FieldMap = {
-    size,
-    x: diagramX,
-    y: diagramY,
-    px: (x) => diagramX + ((x + FIELD / 2) / FIELD) * size,
-    py: (y) => diagramY + ((LOS - y) / FIELD) * size,
-  }
-
-  if (settings.showCutLines) {
-    doc.setDrawColor(226, 224, 212)
-    doc.setLineWidth(0.1)
-    doc.rect(cell.x, cell.y, cell.width, cell.height)
+    x: cell.x,
+    y: cell.y,
+    width: cell.width,
+    height: cell.height,
+    size: shorter,
+    px: (x) => cell.x + ((x + FIELD / 2) / FIELD) * cell.width,
+    py: (y) => cell.y + ((LOS - y) / FIELD) * cell.height,
   }
 
   drawFieldLines(doc, map, settings.showFieldLines)
-  const routeWidth = Math.max(0.16, size * 0.0085)
+  const routeWidth = Math.max(0.16, shorter * 0.0085)
   for (const player of play.players) {
     if (!player.motion?.points.length) continue
     drawRoute(
@@ -309,30 +303,42 @@ function drawCard(
     })
   }
 
+  const inset = Math.min(shorter * 0.06, 2)
+
   if (settings.showCardNumber) {
     doc.setFont('helvetica', 'bold')
-    doc.setFontSize(4.6)
+    doc.setFontSize(4.2)
     doc.setTextColor(148, 145, 132)
-    doc.text(String(cardNumber).padStart(2, '0'), cell.x + pad * 0.4, cell.y + pad * 0.9)
+    doc.text(String(cardNumber).padStart(2, '0'), cell.x + inset * 0.7, cell.y + inset * 1.1)
   }
 
   const label =
     settings.showCodeName && play.codeName.trim() ? play.codeName.trim() : play.name
-  const labelY = diagramY + size + labelBand * 0.52
+  // The name sits in the lower right corner, on a paper plate so the field's
+  // lines do not run through it.
   const { text: fitted, size: fontSize } = fitText(
     doc,
     label.toUpperCase(),
-    cell.width - pad * 2,
-    Math.min(11, Math.max(5, size * 0.42)),
-    4,
+    cell.width * 0.62,
+    Math.min(7, Math.max(3.5, shorter * 0.22)),
+    3.2,
   )
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(fontSize)
+  const labelRight = cell.x + cell.width - inset
+  const labelBottom = cell.y + cell.height - inset
+  const textWidth = doc.getTextWidth(fitted)
+  const textHeight = fontSize / MM_TO_PT
+  doc.setFillColor(255, 255, 255)
+  doc.rect(
+    labelRight - textWidth - textHeight * 0.35,
+    labelBottom - textHeight * 1.1,
+    textWidth + textHeight * 0.7,
+    textHeight * 1.25,
+    'F',
+  )
   doc.setTextColor(...ink)
-  doc.text(fitted, cell.x + cell.width / 2, labelY, {
-    align: 'center',
-    baseline: 'middle',
-  })
+  doc.text(fitted, labelRight, labelBottom, { align: 'right', baseline: 'bottom' })
 }
 
 export function createWristCoachPdf(
@@ -390,6 +396,20 @@ export function createWristCoachPdf(
         settings.inkColor,
       )
     })
+    // The cut grid belongs to the page, not to a card: every slot gets its
+    // border, and it is drawn last because a card's field fills its whole cell.
+    if (settings.showCutLines) {
+      doc.setDrawColor(226, 224, 212)
+      doc.setLineWidth(0.1)
+      for (let column = 0; column <= columns; column += 1) {
+        const x = safe.left + column * cellWidth
+        doc.line(x, safe.top, x, safe.top + rows * cellHeight)
+      }
+      for (let row = 0; row <= rows; row += 1) {
+        const y = safe.top + row * cellHeight
+        doc.line(safe.left, y, safe.left + columns * cellWidth, y)
+      }
+    }
   })
 
   return doc

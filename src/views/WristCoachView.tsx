@@ -376,36 +376,35 @@ export function WristCoachView({ onBack }: { onBack: () => void }) {
                           <div
                             key={play.id}
                             className={cx(
-                              'relative flex min-h-0 min-w-0 flex-col items-center justify-center px-[2%] py-[2%]',
+                              'relative min-h-0 min-w-0',
                               wrist.showCutLines && 'border border-[#e6e4d8]',
                             )}
                           >
                             {wrist.showCardNumber && (
                               <span
-                                className="absolute left-[3%] top-[2%] font-bold text-[#9a978a]"
-                                style={{ fontSize: '1.2cqw' }}
+                                className="absolute left-[3%] top-[2%] z-10 font-bold text-[#9a978a]"
+                                style={{ fontSize: '1.1cqw' }}
                               >
                                 {String(cardNumber).padStart(2, '0')}
                               </span>
                             )}
-                            <div className="flex w-full flex-1 items-center justify-center">
-                              <div className="aspect-square w-full max-w-full">
-                                <PlayDiagram
-                                  players={play.players}
-                                  className="h-full w-full"
-                                  paper
-                                  fieldLines={wrist.showFieldLines}
-                                  showLabels={wrist.showPlayerLabels}
-                                  labelMode={wrist.playerLabelMode}
-                                  routeColor={!wrist.monochrome}
-                                  strokeScale={1.2}
-                                  ariaLabel={`${play.name} wrist coach card`}
-                                />
-                              </div>
-                            </div>
+                            {/* The field covers the whole card, stretched to its
+                                shape; the name sits on a paper plate in the corner. */}
+                            <PlayDiagram
+                              players={play.players}
+                              className="absolute inset-0 h-full w-full"
+                              paper
+                              stretch
+                              fieldLines={wrist.showFieldLines}
+                              showLabels={wrist.showPlayerLabels}
+                              labelMode={wrist.playerLabelMode}
+                              routeColor={!wrist.monochrome}
+                              strokeScale={1.2}
+                              ariaLabel={`${play.name} wrist coach card`}
+                            />
                             <div
-                              className="w-full shrink-0 truncate text-center font-bold uppercase leading-tight text-[#141914]"
-                              style={{ fontSize: '3.6cqw', letterSpacing: '0.01em' }}
+                              className="absolute bottom-[3%] right-[3%] max-w-[72%] truncate bg-[#fffdf4] px-[1.2%] py-[0.4%] text-right font-bold uppercase leading-tight text-[#141914]"
+                              style={{ fontSize: '1.8cqw', letterSpacing: '0.01em' }}
                             >
                               {label}
                             </div>
