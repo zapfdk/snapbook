@@ -96,8 +96,9 @@ const defaultWrist: WristCoachSettings = {
   selectedPlayIds: DEFAULT_PLAYBOOK.plays.map((play) => play.id),
   columns: 3,
   rows: 3,
-  pageWidth: 100,
-  pageHeight: 150,
+  // A wrist coach is worn across the wrist: a page starts landscape.
+  pageWidth: 150,
+  pageHeight: 100,
   marginTop: 6,
   marginBottom: 6,
   marginLeft: 6,

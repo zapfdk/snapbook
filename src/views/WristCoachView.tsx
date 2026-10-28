@@ -19,14 +19,24 @@ import { buildWristPages, exportWristCoachPdf } from '../lib/pdf/wristCoach'
 import { cx } from '../lib/files'
 import type { Play, WristCoachSettings } from '../types'
 
+/**
+ * A wrist coach is worn across the wrist, so landscape sizes come first and the
+ * default sheet is 150 × 100 mm. Portrait inserts are still offered for the
+ * small card sizes coaches already print.
+ */
 const PAGE_PRESETS = [
-  { id: '100x150', label: 'Wrist coach · 100 × 150 mm', width: 100, height: 150 },
-  { id: '90x140', label: 'Compact wrist · 90 × 140 mm', width: 90, height: 140 },
-  { id: '76x127', label: 'Index card · 76 × 127 mm', width: 76, height: 127 },
-  { id: '105x148', label: 'A6 · 105 × 148 mm', width: 105, height: 148 },
-  { id: '148x210', label: 'A5 · 148 × 210 mm', width: 148, height: 210 },
-  { id: '216x279', label: 'US Letter · 216 × 279 mm', width: 215.9, height: 279.4 },
-  { id: '210x297', label: 'A4 · 210 × 297 mm', width: 210, height: 297 },
+  { id: '150x100', label: 'Wrist coach · 150 × 100 mm', width: 150, height: 100 },
+  { id: '140x90', label: 'Compact wrist · 140 × 90 mm', width: 140, height: 90 },
+  { id: '127x76', label: 'Index card · 127 × 76 mm', width: 127, height: 76 },
+  { id: '148x105', label: 'A6 · 148 × 105 mm', width: 148, height: 105 },
+  { id: '210x148', label: 'A5 · 210 × 148 mm', width: 210, height: 148 },
+  { id: '279x216', label: 'US Letter · 279 × 216 mm', width: 279.4, height: 215.9 },
+  { id: '297x210', label: 'A4 · 297 × 210 mm', width: 297, height: 210 },
+  { id: '100x150', label: 'Wrist coach, portrait · 100 × 150 mm', width: 100, height: 150 },
+  { id: '90x140', label: 'Compact wrist, portrait · 90 × 140 mm', width: 90, height: 140 },
+  { id: '76x127', label: 'Index card, portrait · 76 × 127 mm', width: 76, height: 127 },
+  { id: '105x148', label: 'A6, portrait · 105 × 148 mm', width: 105, height: 148 },
+  { id: '210x297', label: 'A4, portrait · 210 × 297 mm', width: 210, height: 297 },
 ]
 
 export function WristCoachView({ onBack }: { onBack: () => void }) {
@@ -429,6 +439,7 @@ export function WristCoachView({ onBack }: { onBack: () => void }) {
         <div className="flex items-center justify-between">
           <h2 className="label">Print setup</h2>
           <span className="font-mono text-[0.6rem] text-slate-moss">
+            {wrist.pageWidth >= wrist.pageHeight ? 'Landscape' : 'Portrait'} ·{' '}
             {wrist.columns} × {wrist.rows}
           </span>
         </div>

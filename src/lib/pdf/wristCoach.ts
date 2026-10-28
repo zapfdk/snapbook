@@ -341,8 +341,10 @@ export function createWristCoachPdf(
   settings: WristCoachSettings,
 ): jsPDF {
   const { pageWidth, pageHeight, columns, rows } = settings
+  // A landscape insert is a landscape PDF page, so it prints at 100% scale.
+  const orientation = pageWidth >= pageHeight ? 'landscape' : 'portrait'
   const doc = new jsPDF({
-    orientation: 'portrait',
+    orientation,
     unit: 'mm',
     format: [pageWidth, pageHeight],
     compress: true,
@@ -367,7 +369,7 @@ export function createWristCoachPdf(
   const cellHeight = areaHeight / Math.max(1, rows)
 
   pages.forEach((page, pageIndex) => {
-    if (pageIndex > 0) doc.addPage([pageWidth, pageHeight], 'portrait')
+    if (pageIndex > 0) doc.addPage([pageWidth, pageHeight], orientation)
     doc.setFillColor(255, 255, 255)
     doc.rect(0, 0, pageWidth, pageHeight, 'F')
     page.plays.forEach((play, index) => {

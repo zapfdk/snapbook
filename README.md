@@ -65,8 +65,10 @@ npm run build   # typecheck and production build
   option. The experimental **Sketch** mode turns a
   hand-drawn stroke into the closest library route, or a freehand route when
   nothing fits.
-- **Wrist coach** — choose the card order, paper insert size, grid, margins and
-  ink options, then export a vector PDF at the exact insert dimensions. Motions and option routes keep their dashed
+- **Wrist coach** — choose the card order (drag a card by its grip or use the
+  arrows), paper insert size, grid, margins and ink options, then export a
+  vector PDF at the exact insert dimensions. Inserts are landscape by default
+  (150 × 100 mm) and the swap button beside the size fields flips any size. Motions and option routes keep their dashed
   and dotted styles on the cards and in every diagram, and routes start from the
   end of a motion there too.
 - **Route tree** — print a landscape or portrait numbered route tree (1–9 plus
@@ -412,11 +414,6 @@ empty field that meets a protected file says the file needs a password.
 
 Small things to pick up another time:
 
-- **Wrist coach pages should start in landscape.** The page-size presets and the
-  default 100 × 150 mm sheet are all portrait, while the route tree opens in
-  landscape. Flipping the dimensions already works — the swap button beside the
-  width and height fields trades them — so this is about the starting
-  orientation and about offering landscape sizes in the preset list.
 - **List the plays that use a formation or a route.** The formation library
   counts plays ("Used by 3 plays") but there is no way to see which ones, and the
   route library says nothing about where a route is used. Both should offer a
