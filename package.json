@@ -3,6 +3,9 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "engines": {
+    "node": ">=22.12"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build && node scripts/build-service-worker.mjs",
@@ -10,7 +13,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "jspdf": "^3.0.1",
+    "jspdf": "^4.2.1",
     "lucide-react": "^0.468.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
@@ -24,6 +27,6 @@
     "tailwindcss": "^4.0.0",
     "typescript": "~5.7.2",
     "vite": "^6.0.5",
-    "vitest": "^2.1.8"
+    "vitest": "^5.0.5"
   }
 }
